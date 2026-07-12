@@ -3,17 +3,25 @@ import { config } from "./config.js";
 import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
 import { writeLatestPositions } from "./db/redis.js";
 import { insertPositions } from "./db/postgres.js";
+import { attachRoutes } from "./enrichment/attachRoutes.js";
+import { startRouteLookupWorker } from "./enrichment/routeLookupWorker.js";
 
 async function pollOnce(): Promise<void> {
   const states = await fetchPugetSoundStates();
   console.log(`[ingestion] polled ${states.length} aircraft in region`);
-  await Promise.all([writeLatestPositions(states), insertPositions(states)]);
+  // Attach cached routes (and enqueue background lookups for cache misses)
+  // before writing to Redis, so the API/WebSocket serve origin/destination.
+  // Position history (insertPositions) doesn't need routes, so it uses the
+  // raw states and runs in parallel.
+  const [enriched] = await Promise.all([attachRoutes(states), insertPositions(states)]);
+  await writeLatestPositions(enriched);
 }
 
 async function main(): Promise<void> {
   console.log(
     `[ingestion] starting, polling every ${config.pollIntervalMs}ms`,
   );
+  startRouteLookupWorker();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {

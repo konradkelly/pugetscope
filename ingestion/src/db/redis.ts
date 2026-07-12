@@ -1,10 +1,10 @@
 import { Redis } from "ioredis";
 import { config } from "../config.js";
-import type { StateVector } from "../openskyClient.js";
+import type { EnrichedStateVector } from "../enrichment/attachRoutes.js";
 
 export const redis = new Redis(config.redisUrl);
 
-export async function writeLatestPositions(states: StateVector[]): Promise<void> {
+export async function writeLatestPositions(states: EnrichedStateVector[]): Promise<void> {
   if (states.length === 0) return;
 
   // No separate "active" index: TTL'd keys expire on their own, and the

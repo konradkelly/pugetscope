@@ -52,3 +52,23 @@ data:
       value TEXT,
       PRIMARY KEY (user_id, key)
     );
+
+    -- Cached callsign -> route lookups from adsbdb (see docs/SPEC.md §12).
+    -- Keyed by callsign (a flight number). found = false negative-caches misses
+    -- (GA/military callsigns that never resolve) so we don't re-hammer the free API.
+    CREATE TABLE IF NOT EXISTS flight_routes (
+      callsign TEXT PRIMARY KEY,
+      origin_icao TEXT,
+      origin_iata TEXT,
+      origin_name TEXT,
+      origin_lat DOUBLE PRECISION,
+      origin_lon DOUBLE PRECISION,
+      dest_icao TEXT,
+      dest_iata TEXT,
+      dest_name TEXT,
+      dest_lat DOUBLE PRECISION,
+      dest_lon DOUBLE PRECISION,
+      airline_name TEXT,
+      found BOOLEAN NOT NULL,
+      fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
