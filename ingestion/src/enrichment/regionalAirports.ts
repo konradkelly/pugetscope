@@ -4,12 +4,16 @@ import type { StateVector } from "../openskyClient.js";
 // airport reference points (approximate, sufficient for the ~15km proximity
 // check below — not landing-accuracy geodesy).
 export const REGIONAL_AIRPORTS = [
-  { icao: "KSEA", name: "Seattle-Tacoma Intl", lat: 47.4502, lon: -122.3088 },
-  { icao: "KBFI", name: "Boeing Field", lat: 47.53, lon: -122.3019 },
-  { icao: "KPAE", name: "Paine Field", lat: 47.9063, lon: -122.2816 },
-  { icao: "KRNT", name: "Renton Municipal", lat: 47.4931, lon: -122.216 },
-  { icao: "KTIW", name: "Tacoma Narrows", lat: 47.2679, lon: -122.5776 },
+  { icao: "KSEA", iata: "SEA", name: "Seattle-Tacoma Intl", lat: 47.4502, lon: -122.3088 },
+  { icao: "KBFI", iata: "BFI", name: "Boeing Field", lat: 47.53, lon: -122.3019 },
+  { icao: "KPAE", iata: "PAE", name: "Paine Field", lat: 47.9063, lon: -122.2816 },
+  { icao: "KRNT", iata: "RNT", name: "Renton Municipal", lat: 47.4931, lon: -122.216 },
+  { icao: "KTIW", iata: "TIW", name: "Tacoma Narrows", lat: 47.2679, lon: -122.5776 },
 ] as const;
+
+export function getRegionalAirport(icao: string) {
+  return REGIONAL_AIRPORTS.find((a) => a.icao === icao);
+}
 
 const EARTH_RADIUS_KM = 6371;
 

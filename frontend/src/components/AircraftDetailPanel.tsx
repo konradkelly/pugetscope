@@ -9,7 +9,10 @@ interface Props {
 }
 
 function airportCode(a: Airport | null | undefined): string {
-  return a?.iata || a?.icao || "???";
+  // "—" for a genuinely unknown endpoint (e.g. an "inferred" partial route
+  // only knows the in-region side — see docs/SPEC.md §12 tier 2), matching
+  // the same placeholder used elsewhere in this panel.
+  return a?.iata || a?.icao || "—";
 }
 
 // See docs/SPEC.md §12 — only "typical" is produced today; "inferred"/"live"
