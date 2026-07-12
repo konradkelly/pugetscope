@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pugetscope-api
+  namespace: pugetscope
+  annotations:
+    # rewrite-target applies to every path rule on an Ingress resource, not
+    # just one — kept in its own Ingress so it doesn't also rewrite /live
+    # (see pugetscope-app below) via its empty capture group.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: pugetscope.127.0.0.1.nip.io
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pugetscope-app
+  namespace: pugetscope
+  annotations:
+    # /live is a long-lived websocket connection — default proxy timeouts
+    # would kill it after 60s of no new HTTP traffic on the connection.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: pugetscope.127.0.0.1.nip.io
+      http:
+        paths:
+          - path: /live
+            pathType: Exact
+            backend:
+              service:
+                name: websocket
+                port:
+                  number: 3001
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

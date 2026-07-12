@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Reference/enrichment data — batch-loaded from the OpenSky Aircraft Database.
 -- See docs/SPEC.md §7. `first_seen`/`last_seen` track sightings by the ingestion
--- service; the rest is populated by a separate scheduled enrichment job (not yet built).
+-- service; the rest is populated by ingestion/src/enrich.ts (npm run enrich).
 CREATE TABLE IF NOT EXISTS aircraft (
   icao24 TEXT PRIMARY KEY,
   registration TEXT,

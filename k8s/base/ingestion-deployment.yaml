@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  namespace: pugetscope
+spec:
+  replicas: 1 # exactly one poller — see docs/SPEC.md §5, never scale this out
+  selector:
+    matchLabels:
+      app: ingestion
+  template:
+    metadata:
+      labels:
+        app: ingestion
+    spec:
+      containers:
+        - name: ingestion
+          image: pugetscope-registry:5000/pugetscope-ingestion:latest
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_PASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_DB } }
+            - name: DATABASE_URL
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: OPENSKY_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_CLIENT_ID } }
+            - name: OPENSKY_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_CLIENT_SECRET } }
+            - name: POLL_INTERVAL_MS
+              value: "30000"
