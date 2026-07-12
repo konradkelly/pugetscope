@@ -160,7 +160,7 @@ Progress against the original plan (repo: [github.com/konradkelly/pugetscope](ht
 3. ~~Build `api` + `websocket` services~~ — done: hand-rolled auth (`api`), live position push via Redis pub/sub (`websocket`), both verified end-to-end.
 4. ~~Build frontend map against live WebSocket feed~~ — done: live map, aircraft detail panel, auth UI, verified in-browser against the real pipeline.
 5. ~~Aircraft reference data enrichment~~ — done: one-off `npm run enrich` job in `ingestion/`, verified against the live OpenSky Aircraft Database CSV.
-6. **Containerize all four services + local k3d deploy** — not started. Next up.
-7. Terraform + cloud infra (EC2 for kubeadm cluster, RDS, ElastiCache).
+6. ~~Containerize all four services + local k3d deploy~~ — done: Dockerfiles for all services, raw YAML manifests in `k8s/base/`, nginx-ingress (Traefik disabled), local image registry, verified end-to-end in-browser through the Ingress. See `k8s/README.md`.
+7. **Terraform + cloud infra** (EC2 for kubeadm cluster, RDS, ElastiCache) — not started. Next up.
 8. Self-managed K8s on EC2 via kubeadm (single control-plane first, per §9).
 9. Multi control-plane HA rebuild (deliberate later milestone, per §9).
