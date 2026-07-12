@@ -21,4 +21,11 @@ export async function writeLatestPositions(states: StateVector[]): Promise<void>
     );
   }
   await pipeline.exec();
+
+  // Notifies the websocket service that a new batch is available — see
+  // websocket/src/redisSubscriber.ts. Pub/sub is fire-and-forget (no
+  // history, no delivery guarantee), which is fine here: it's just a
+  // "go re-read the latest state" signal, and the state itself already
+  // lives durably in the keys just written above.
+  await redis.publish("aircraft:updates", JSON.stringify(states));
 }
