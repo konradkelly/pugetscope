@@ -1,0 +1,33 @@
+# Local dev infra only (Postgres + Redis). This is NOT the Kubernetes
+# deployment target — see docs/SPEC.md §9. App services run on the host
+# via `npm run dev` for fast iteration until they're containerized for k3d.
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: pugetscope
+      POSTGRES_PASSWORD: pugetscope
+      POSTGRES_DB: pugetscope
+    ports:
+      - "5433:5432" # host 5433 to avoid clashing with a native Postgres install on 5432
+    volumes:
+      - pugetscope-postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pugetscope"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pugetscope-postgres-data:

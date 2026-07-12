@@ -1,0 +1,47 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Reference/enrichment data — batch-loaded from the OpenSky Aircraft Database.
+-- See docs/SPEC.md §7. `first_seen`/`last_seen` track sightings by the ingestion
+-- service; the rest is populated by a separate scheduled enrichment job (not yet built).
+CREATE TABLE IF NOT EXISTS aircraft (
+  icao24 TEXT PRIMARY KEY,
+  registration TEXT,
+  manufacturer TEXT,
+  model TEXT,
+  typecode TEXT,
+  operator TEXT,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS positions (
+  id BIGSERIAL PRIMARY KEY,
+  icao24 TEXT NOT NULL REFERENCES aircraft(icao24),
+  callsign TEXT,
+  position GEOGRAPHY(POINT, 4326) NOT NULL,
+  altitude DOUBLE PRECISION,
+  ground_speed DOUBLE PRECISION,
+  heading DOUBLE PRECISION,
+  vertical_speed DOUBLE PRECISION,
+  recorded_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS positions_icao24_recorded_at_idx
+  ON positions (icao24, recorded_at);
+
+CREATE INDEX IF NOT EXISTS positions_position_gist_idx
+  ON positions USING GIST (position);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+  user_id UUID NOT NULL REFERENCES users(id),
+  key TEXT NOT NULL,
+  value TEXT,
+  PRIMARY KEY (user_id, key)
+);
