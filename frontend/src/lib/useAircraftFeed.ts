@@ -9,10 +9,16 @@ export interface Airport {
   lon: number | null;
 }
 
+// "typical" = adsbdb's crowd-sourced route, unverified against this specific
+// flight (current behavior — see docs/SPEC.md §12). "inferred"/"live" are
+// reserved for future tiers (own-track inference, FIDS match).
+export type RouteConfidence = "live" | "inferred" | "typical";
+
 export interface FlightRoute {
   origin: Airport | null;
   destination: Airport | null;
   airline: string | null;
+  confidence: RouteConfidence;
 }
 
 export interface StateVector {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type AircraftDetail } from "../lib/api.js";
-import type { Airport, StateVector } from "../lib/useAircraftFeed.js";
+import type { Airport, RouteConfidence, StateVector } from "../lib/useAircraftFeed.js";
 
 interface Props {
   icao24: string;
@@ -11,6 +11,14 @@ interface Props {
 function airportCode(a: Airport | null | undefined): string {
   return a?.iata || a?.icao || "???";
 }
+
+// See docs/SPEC.md §12 — only "typical" is produced today; "inferred"/"live"
+// are reserved for the own-track-inference and FIDS tiers.
+const CONFIDENCE_LABEL: Record<RouteConfidence, string> = {
+  live: "confirmed live",
+  inferred: "inferred from live position",
+  typical: "typical route for this callsign — not confirmed live",
+};
 
 export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
   const [detail, setDetail] = useState<AircraftDetail | null>(null);
@@ -61,7 +69,7 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
             <span className="flex-1 text-right">{route.destination?.name ?? ""}</span>
           </div>
           <p className="mt-1 text-center text-[10px] text-gray-400">
-            typical route for this callsign — not confirmed live
+            {CONFIDENCE_LABEL[route.confidence]}
           </p>
         </div>
       )}
