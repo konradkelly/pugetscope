@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, type AircraftDetail } from "../lib/api.js";
-import type { StateVector } from "../lib/useAircraftFeed.js";
+import type { Airport, StateVector } from "../lib/useAircraftFeed.js";
 
 interface Props {
   icao24: string;
   live: StateVector | undefined;
   onClose: () => void;
+}
+
+function airportCode(a: Airport | null | undefined): string {
+  return a?.iata || a?.icao || "???";
 }
 
 export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
@@ -21,12 +25,19 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
       .catch((err) => setError(err.message));
   }, [icao24]);
 
+  const route = live?.route;
+
   return (
     <div className="absolute right-4 top-4 w-72 rounded-lg bg-white/95 p-4 shadow-lg backdrop-blur">
       <div className="flex items-start justify-between">
-        <h2 className="text-lg font-semibold">
-          {live?.callsign?.trim() || icao24}
-        </h2>
+        <div>
+          <h2 className="text-lg font-semibold leading-tight">
+            {live?.callsign?.trim() || icao24}
+          </h2>
+          {route?.airline && (
+            <p className="text-sm text-gray-500">{route.airline}</p>
+          )}
+        </div>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-700"
@@ -38,7 +49,24 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
-      <dl className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-sm">
+      {route && (route.origin || route.destination) && (
+        <div className="mt-3 rounded bg-sky-50 p-2">
+          <div className="flex items-center justify-center gap-2 font-semibold">
+            <span>{airportCode(route.origin)}</span>
+            <span className="text-gray-400">→</span>
+            <span>{airportCode(route.destination)}</span>
+          </div>
+          <div className="mt-1 flex justify-between gap-2 text-[11px] leading-tight text-gray-500">
+            <span className="flex-1 text-left">{route.origin?.name ?? ""}</span>
+            <span className="flex-1 text-right">{route.destination?.name ?? ""}</span>
+          </div>
+          <p className="mt-1 text-center text-[10px] text-gray-400">
+            typical route for this callsign — not confirmed live
+          </p>
+        </div>
+      )}
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-2 gap-y-1 text-sm">
         <dt className="text-gray-500">ICAO24</dt>
         <dd>{icao24}</dd>
 

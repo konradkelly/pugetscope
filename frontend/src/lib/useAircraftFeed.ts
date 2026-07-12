@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { config } from "./config.js";
 
+export interface Airport {
+  icao: string | null;
+  iata: string | null;
+  name: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+export interface FlightRoute {
+  origin: Airport | null;
+  destination: Airport | null;
+  airline: string | null;
+}
+
 export interface StateVector {
   icao24: string;
   callsign: string | null;
@@ -17,6 +31,8 @@ export interface StateVector {
   geoAltitude: number | null;
   squawk: string | null;
   spi: boolean;
+  // Present only when adsbdb had a route for this callsign (docs/SPEC.md §12).
+  route?: FlightRoute;
 }
 
 interface FeedMessage {
