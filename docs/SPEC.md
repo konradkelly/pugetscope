@@ -20,6 +20,7 @@ Target audience: public multi-user web app — real accounts, not just a persona
 - **Kubernetes-native architecture from day one**: services are containerized and designed as independent Deployments even in the earliest local-dev version (via `k3d` locally — see Infra). Cloud target is **self-managed Kubernetes on EC2**, not EKS (cost — no EKS control-plane hourly charge — and it's the deeper "operate Kubernetes, not just use it" story for a portfolio project).
 
 ### Explicitly out of scope for v1 (candidates for v2+)
+- **Flight routing enrichment** (origin/destination + self-computed ETA per aircraft) — fully designed, see §12. First v2 feature to build.
 - Airport departures/arrivals dashboard (needs a schedule data source, separate integration)
 - Flight playback/replay
 - Noise heatmap
@@ -164,3 +165,57 @@ Progress against the original plan (repo: [github.com/konradkelly/pugetscope](ht
 7. **Terraform + cloud infra** (EC2 for kubeadm cluster, RDS, ElastiCache) — not started. Next up.
 8. Self-managed K8s on EC2 via kubeadm (single control-plane first, per §9).
 9. Multi control-plane HA rebuild (deliberate later milestone, per §9).
+
+First v2 feature (independent of the infra track above): **flight routing enrichment**, fully specced in §12.
+
+## 12. Flight Routing Enrichment (v2 — designed, not yet built)
+
+Goal: show, per aircraft, where it departed from, where it's going, and an estimated arrival time. This is the routing/schedule layer OpenSky's live `/states/all` feed lacks.
+
+### Data source: free callsign→route lookup (not the paid schedule APIs)
+
+Primary: **adsbdb.com** — free, no account, clean JSON. Given a callsign (which `/states/all` already provides, e.g. `ASA415`) it returns origin + destination airports with ICAO/IATA codes, names, **and coordinates**, plus airline. Endpoint: `https://api.adsbdb.com/v0/callsign/{CALLSIGN}`. Fallback: **hexdb.io** (`https://hexdb.io/callsign-route?callsign={CALLSIGN}`) if adsbdb 404s.
+
+**Key limitation (accepted):** these are crowd-sourced route databases returning the route a callsign *typically* flies (keyed by flight number), not the live routing of the specific in-progress flight — and different providers can disagree (observed: adsbdb said ASA415 = LAX→SEA, hexdb said SAN→SEA). No live ETA, gate, or delay data. That's the tradeoff for $0/no-account. If authoritative live schedule/ETA/gate data is ever needed, **FlightAware AeroAPI** (~$99/mo Silver tier for our query volume) is a drop-in supplement — the caching architecture below is identical either way, so it's a swap of one enrichment module, not a rearchitect. Cost math for AeroAPI: naive per-poll-per-aircraft lookups would be ~86k queries/day (ruinous); the callsign-keyed cached design below collapses that to ~one lookup per unique flight (few hundred–1k/day), which is what keeps it in the cheap tier.
+
+### ETA — computed ourselves, free
+
+The route lookup gives the **destination airport's coordinates**; OpenSky already gives the aircraft's live position + ground speed. So ETA is derived locally:
+`eta_seconds = haversine(current_pos, destination_coords) / ground_speed`, `eta_time = now + eta_seconds`. Guard against near-zero ground speed (on-ground/taxiing → no ETA). Recompute at **read time** (see below), not stored — so it refines automatically as the aircraft nears its destination, at zero API cost and never going stale. Label it clearly as an estimate in the UI: it ignores approach patterns, holding, and taxi time and assumes a direct constant-speed path.
+
+### Data model additions
+
+```sql
+-- cached route lookups, keyed by callsign (a flight number, e.g. ASA415)
+flight_routes(
+  callsign        TEXT PRIMARY KEY,
+  origin_icao      TEXT, origin_iata TEXT, origin_name TEXT,
+  origin_lat       DOUBLE PRECISION, origin_lon DOUBLE PRECISION,
+  dest_icao        TEXT, dest_iata TEXT, dest_name TEXT,
+  dest_lat         DOUBLE PRECISION, dest_lon DOUBLE PRECISION,
+  airline_name     TEXT,
+  found            BOOLEAN NOT NULL,   -- negative-cache misses (GA/military callsigns) too
+  fetched_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+```
+
+Caching is by callsign with a long TTL (routes change slowly, and the source data is itself "typical route" not per-instance, so a multi-day/week cache matches its own semantics). `found = false` rows negative-cache misses with a *shorter* TTL so we don't re-hammer the free API for the large volume of GA/military callsigns that will never resolve.
+
+### Where it slots in — decoupled from position polling
+
+Same principle as the existing aircraft-reference enrichment (§7): **never call the external API from the poll loop**. Flow:
+1. Ingestion poll sees an aircraft with a callsign.
+2. Look up `flight_routes` in Postgres (local join). Hit → attach route to the enriched record written to Redis. Miss/stale → enqueue an async lookup, don't block the poll.
+3. A lightweight in-process lookup worker (own rate limit; be a good citizen to a volunteer-run API — set a `User-Agent`, cap lookups/min, back off on errors) calls adsbdb → hexdb fallback → upserts `flight_routes` (including negative results). If both are down, serve stale cache; never crash ingestion.
+4. Route fields (incl. destination coords) get written into the `aircraft:latest:{icao24}` Redis blob so the API and WebSocket serve them without extra work.
+
+Start this worker in-process inside `ingestion`; note it's a clean candidate to split into its own `enrichment` microservice later (matches the §5 microservices direction) if lookup volume warrants.
+
+**ETA computed at read time**, not stored: the `api` service's `GET /aircraft/:icao24` (and the enriched blob the `websocket` service pushes) compute `eta_time` on the fly from the record's current position + cached destination coords. Frontend can equally compute it client-side from the same fields — either is fine; read-time keeps it always-fresh with zero storage or refresh cost.
+
+### API surface additions
+- `GET /aircraft` and `GET /aircraft/:icao24`: add `origin`, `destination`, and computed `eta` fields.
+- WebSocket `/live` blobs: include `origin`/`destination` so the map can label/draw routes; `eta` computed client-side or server-side at emit.
+
+### Licensing / dependency note
+adsbdb is open-source (MIT) with a free public API; hexdb similarly free. Both are volunteer-run — hence the aggressive caching, negative-caching, and self-rate-limiting above. If volume ever outgrows polite use, adsbdb publishes data dumps that could be self-hosted as a fallback.
