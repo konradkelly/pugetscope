@@ -168,9 +168,14 @@ Progress against the original plan (repo: [github.com/konradkelly/pugetscope](ht
 
 First v2 feature (independent of the infra track above): **flight routing enrichment**, fully specced in §12.
 
-## 12. Flight Routing Enrichment (v2 — designed, not yet built)
+## 12. Flight Routing Enrichment (v2 — partially built)
 
 Goal: show, per aircraft, where it departed from, where it's going, and an estimated arrival time. This is the routing/schedule layer OpenSky's live `/states/all` feed lacks.
+
+**Build status:**
+- ✅ **adsbdb origin/dest/airline enrichment** — built (`ingestion/src/enrichment/`), cached in `flight_routes`, folded into the Redis blob, surfaced in the frontend detail panel with a "typical route — not confirmed live" disclaimer.
+- ⬜ **Self-computed ETA** — designed (below), not yet built.
+- ⬜ **Routing accuracy upgrade** (confidence tiers: FIDS + own-track inference + plausibility suppression) — designed below, not yet built.
 
 ### Data source: free callsign→route lookup (not the paid schedule APIs)
 
@@ -219,3 +224,21 @@ Start this worker in-process inside `ingestion`; note it's a clean candidate to 
 
 ### Licensing / dependency note
 adsbdb is open-source (MIT) with a free public API; hexdb similarly free. Both are volunteer-run — hence the aggressive caching, negative-caching, and self-rate-limiting above. If volume ever outgrows polite use, adsbdb publishes data dumps that could be self-hosted as a fallback.
+
+### Routing accuracy upgrade (designed, not yet built)
+
+**Problem the current build has.** adsbdb/hexdb return the route a callsign *typically* flies, not what the specific in-progress aircraft is doing. Observed live: `DAL889` descending into SEA (175 m, sinking, over Renton) but cached as PDX→JFK — plainly wrong for that airframe. Other free live-ADS-B APIs (airplanes.live, adsb.fi, adsb.lol, ADSB One) were checked and use the *same* crowd-sourced route DBs, so switching providers doesn't help. Fixing this needs either our own track data or a real schedule source.
+
+**Design: a confidence-tiered hybrid.** Resolve each aircraft's route through tiers, highest confidence first, and label the result's confidence in the UI:
+
+1. **FIDS match — authoritative, "live".** Pull the live arrivals + departures boards (Flight Information Display System) for the regional airports (SEA primary; BFI/PAE/RNT as appetite grows) and match the aircraft's callsign against *today's actual* flights. This yields real origin/dest/scheduled+estimated times/gate for the flights that matter most to a Puget-Sound tracker (nearly all interesting traffic touches SEA). Source: **AeroDataBox** on RapidAPI — has a FIDS/airport-schedule endpoint and a free tier (verify current free-tier request limits before committing; AeroDataBox is moving some products to credit-based billing in 2026, so confirm FIDS terms). This is *airport-centric* caching, a different shape from the callsign cache: fetch each watched airport's board on a schedule (e.g. every few min), cache the whole board keyed by airport, and match live aircraft against it locally — so cost is ~(airports × board-refreshes/day), independent of aircraft count. Bonus: the same board data unlocks the deferred "airport departures/arrivals dashboard" feature (§2 v2 backlog) — two features, one integration.
+
+2. **Own-track inference — high confidence for the in-region endpoint.** We are literally watching the aircraft: one descending toward a known regional airport (altitude falling, vertical rate negative, converging on airport coords) lets us assert its **destination** directly; one climbing out asserts its **origin**. No external source needed. Only the *far* endpoint (where an arrival originally came from / where a departure ultimately terminates) then needs a lookup. Implement as a geometry check against the known regional airport coordinates using data already in the state vector (position, geo/baro altitude, vertical rate, ground speed).
+
+3. **adsbdb typical route — low confidence, current behavior.** Keep as the fallback when neither above resolves (e.g. through-traffic overflying the region, not touching a local airport), labeled "typical / unconfirmed" exactly as now.
+
+**Cheapest high-impact first step — plausibility suppression (free, no new source):** before trusting an adsbdb route, sanity-check it against the live track. If neither the cached origin nor destination is anywhere near an aircraft that is clearly landing/departing in-region (per tier 2's geometry), the typical route is contradicted by what we can see — so downgrade its confidence or suppress it rather than display something we know is wrong. This makes the existing display honest immediately, and is the natural on-ramp to tier 2.
+
+**Confidence field.** Add a `route.confidence` (`"live" | "inferred" | "typical"`) to the enriched blob so the frontend can style/label accordingly (e.g. a badge, or greying-out "typical" routes). This is the honest, portfolio-worthy framing: multi-source enrichment with explicit, surfaced confidence rather than a single unreliable lookup presented as fact.
+
+**Sequencing:** (1) plausibility suppression + `confidence` field (free, immediate), (2) own-track endpoint inference, (3) AeroDataBox FIDS integration + airport-board cache (also delivers the airport dashboard). ETA (above) composes cleanly on top — a FIDS-sourced estimated arrival time supersedes the self-computed haversine ETA when available.
