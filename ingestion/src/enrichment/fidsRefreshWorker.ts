@@ -6,14 +6,18 @@ const CHECK_INTERVAL_MS = 5 * 60 * 1000; // just checks whether a refresh is due
 
 async function maybeRefresh(): Promise<void> {
   const airportIcao = config.aerodatabox.airportIcao;
-  const lastFetchedAt = await getLastFetchedAt(airportIcao);
-  const dueAt = lastFetchedAt
-    ? lastFetchedAt.getTime() + config.aerodatabox.refreshIntervalMs
-    : 0;
-
-  if (Date.now() < dueAt) return;
-
   try {
+    // Whole function body wrapped, not just the fetch/write below: a
+    // transient DB error here (e.g. a migration not yet applied) must never
+    // crash the ingestion process — it did exactly this in practice, taking
+    // down the whole service via an unhandled rejection, not just FIDS.
+    const lastFetchedAt = await getLastFetchedAt(airportIcao);
+    const dueAt = lastFetchedAt
+      ? lastFetchedAt.getTime() + config.aerodatabox.refreshIntervalMs
+      : 0;
+
+    if (Date.now() < dueAt) return;
+
     const flights = await fetchFidsBoard(airportIcao);
     await replaceBoard(airportIcao, flights);
     console.log(`[fids] refreshed ${airportIcao} board: ${flights.length} flights`);
