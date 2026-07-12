@@ -2,6 +2,17 @@
 
 Raw YAML manifests — no Kustomize/Helm yet, per docs/SPEC.md §9 (Kustomize is deliberately deferred to Phase 2, once there's a real local-vs-EC2 config diff to manage). Phase 0: local `k3d` only.
 
+## TL;DR — one command
+
+```
+cp k8s/secrets.env.example k8s/secrets.env   # first time only: fill in OPENSKY_CLIENT_ID / SECRET
+bash k8s/up.sh
+```
+
+`up.sh` auto-detects cluster state and does the right thing: full setup if the cluster doesn't exist, `k3d cluster start` if it exists but is stopped, or rebuild-push-redeploy the app services if it's already running. The rest of this README documents each step manually for when you want to run them individually or understand what `up.sh` is doing.
+
+To stop without destroying anything (keeps DB data + images): `k3d cluster stop pugetscope`.
+
 ## One-time cluster setup
 
 ```
