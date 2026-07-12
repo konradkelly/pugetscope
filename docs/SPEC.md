@@ -86,7 +86,7 @@ Why split ingestion from API: ingestion is a long-lived, always-on process indep
 
 ## 6. Tech Stack
 
-- **Frontend**: React, TypeScript, Vite, MapLibre GL JS (OpenStreetMap tiles — open source, no vendor lock-in), Tailwind CSS. Aircraft icons: **tar1090's SVG icon set** (per-type icons — jet/helicopter/military/etc., designed for heading rotation, used by the real hobbyist ADS-B tracking community) — GPLv2+ repo, confirm the icon files' own license header before pulling them in; fallback is Bootstrap Icons (MIT) generic airplane glyph if that check doesn't come back clean.
+- **Frontend**: React, TypeScript, Vite, MapLibre GL JS (OpenStreetMap tiles — open source, no vendor lock-in), Tailwind CSS. Aircraft icons: **placeholder single triangle glyph** (rotated by heading), chosen over tar1090's per-type icon set after checking — those icons are inline SVG path data in `markers.js`, covered by the *same* GPLv2+ license as the whole repo (no separate permissive per-asset license), which would mean real copyleft exposure if copied into PugetScope's own source tree. Not worth the licensing entanglement for a portfolio project. Revisit later with either a permissively-licensed (MIT/CC0) per-type icon set or custom-drawn icons if more visual variety is wanted.
 - **Backend**: Node.js, Fastify, WebSockets (`ws` or Fastify's websocket plugin)
 - **Database**: PostgreSQL + PostGIS extension (aircraft history, users, region metadata)
 - **Cache**: Redis (latest aircraft positions, session/rate-limit data)
@@ -149,16 +149,18 @@ CI/CD: GitHub Actions builds images on push, pushes to ECR, applies Terraform on
 
 ## 10. Open Questions
 
-- **tar1090 icon license verification**: confirm the icon SVG files' own license terms before adoption (repo is GPLv2+ overall; asset-specific terms should be checked directly).
-
-**Domain/hosting budget decision**: No fixed spend ceiling — comfortable proceeding within current AWS and Hostinger costs. Not a blocker for infra sizing decisions (EC2 instance count/size, RDS, ElastiCache).
+None outstanding — all resolved (see decisions inline above): manifest management, cluster HA staging, aircraft reference enrichment source, aircraft icon licensing, domain/hosting budget.
 
 ## 11. Next Steps
 
-1. Resolve remaining open questions above (domain/hosting budget, tar1090 icon license check).
-2. Scaffold repo structure (monorepo vs. multi-repo per service — TBD).
-3. Stand up `ingestion` service against OpenSky with regional filtering, writing to local Postgres/Redis — validate the data pipeline before touching the frontend.
-4. Build `api` + `websocket` services against that data.
-5. Build frontend map against live WebSocket feed.
-6. Containerize + local K8s deploy.
-7. Terraform + cloud infra.
+Progress against the original plan (repo: [github.com/konradkelly/pugetscope](https://github.com/konradkelly/pugetscope)):
+
+1. ~~Scaffold repo structure~~ — done, monorepo (`frontend/`, `api/`, `ingestion/`, `websocket/`, `k8s/`, `terraform/`, `docs/`).
+2. ~~Stand up `ingestion` service~~ — done, polling OpenSky every 30s, writing Redis + Postgres/PostGIS, verified against live traffic.
+3. ~~Build `api` + `websocket` services~~ — done: hand-rolled auth (`api`), live position push via Redis pub/sub (`websocket`), both verified end-to-end.
+4. ~~Build frontend map against live WebSocket feed~~ — done: live map, aircraft detail panel, auth UI, verified in-browser against the real pipeline.
+5. ~~Aircraft reference data enrichment~~ — done: one-off `npm run enrich` job in `ingestion/`, verified against the live OpenSky Aircraft Database CSV.
+6. **Containerize all four services + local k3d deploy** — not started. Next up.
+7. Terraform + cloud infra (EC2 for kubeadm cluster, RDS, ElastiCache).
+8. Self-managed K8s on EC2 via kubeadm (single control-plane first, per §9).
+9. Multi control-plane HA rebuild (deliberate later milestone, per §9).
