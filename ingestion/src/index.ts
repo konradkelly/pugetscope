@@ -5,6 +5,7 @@ import { writeLatestPositions } from "./db/redis.js";
 import { insertPositions } from "./db/postgres.js";
 import { attachRoutes } from "./enrichment/attachRoutes.js";
 import { startRouteLookupWorker } from "./enrichment/routeLookupWorker.js";
+import { startFidsRefreshWorker } from "./enrichment/fidsRefreshWorker.js";
 
 async function pollOnce(): Promise<void> {
   const states = await fetchPugetSoundStates();
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
     `[ingestion] starting, polling every ${config.pollIntervalMs}ms`,
   );
   startRouteLookupWorker();
+  startFidsRefreshWorker();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {

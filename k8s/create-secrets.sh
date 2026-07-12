@@ -30,4 +30,10 @@ kubectl create secret generic opensky-credentials \
   --from-literal=OPENSKY_CLIENT_SECRET="$OPENSKY_CLIENT_SECRET" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Optional — AERODATABOX_API_KEY may be blank in secrets.env (FIDS disabled).
+kubectl create secret generic aerodatabox-credentials \
+  --namespace pugetscope \
+  --from-literal=AERODATABOX_API_KEY="${AERODATABOX_API_KEY:-}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 echo "Secrets created/updated in namespace pugetscope."

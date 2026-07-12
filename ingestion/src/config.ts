@@ -27,4 +27,15 @@ export const config = {
       process.env.DATABASE_URL ??
       "postgres://pugetscope:pugetscope@localhost:5432/pugetscope",
   },
+  // Optional (not requireEnv): FIDS is an opt-in tier-1 enrichment (docs/SPEC.md
+  // §12) — without a key, attachRoutes just falls back to tiers 2/3 as before.
+  aerodatabox: {
+    apiKey: process.env.AERODATABOX_API_KEY ?? null,
+    // Free RapidAPI BASIC plan: 600 units/mo, FIDS is a TIER 2 endpoint (2
+    // units/call) -> 300 calls/mo budget. At one airport that's ~10/day; we
+    // stay well under that (8/day) to leave headroom for dev/test calls and
+    // partial months. See docs/SPEC.md §12.
+    airportIcao: process.env.FIDS_AIRPORT_ICAO ?? "KSEA",
+    refreshIntervalMs: Number(process.env.FIDS_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // 3h -> 8 calls/day
+  },
 };

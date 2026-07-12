@@ -10,8 +10,8 @@ export interface Airport {
 }
 
 // "typical" = adsbdb's crowd-sourced route, unverified against this specific
-// flight (current behavior — see docs/SPEC.md §12). "inferred"/"live" are
-// reserved for future tiers (own-track inference, FIDS match).
+// flight. "inferred" = own-track geometry inference. "live" = a real FIDS
+// board match — see docs/SPEC.md §12.
 export type RouteConfidence = "live" | "inferred" | "typical";
 
 export interface FlightRoute {
@@ -19,6 +19,7 @@ export interface FlightRoute {
   destination: Airport | null;
   airline: string | null;
   confidence: RouteConfidence;
+  eta?: string; // ISO UTC — only present on a "live" arrival match
 }
 
 export interface StateVector {

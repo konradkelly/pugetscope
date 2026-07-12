@@ -15,13 +15,24 @@ function airportCode(a: Airport | null | undefined): string {
   return a?.iata || a?.icao || "—";
 }
 
-// See docs/SPEC.md §12 — only "typical" is produced today; "inferred"/"live"
-// are reserved for the own-track-inference and FIDS tiers.
+// See docs/SPEC.md §12.
 const CONFIDENCE_LABEL: Record<RouteConfidence, string> = {
-  live: "confirmed live",
+  live: "confirmed live — airport schedule match",
   inferred: "inferred from live position",
   typical: "typical route for this callsign — not confirmed live",
 };
+
+function formatEta(iso: string): string {
+  const d = new Date(iso);
+  const now = Date.now();
+  const minutes = Math.round((d.getTime() - now) / 60_000);
+  const clock = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (minutes <= 0) return `${clock} (any moment)`;
+  if (minutes < 60) return `${clock} (~${minutes} min)`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${clock} (~${hours}h ${mins}m)`;
+}
 
 export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
   const [detail, setDetail] = useState<AircraftDetail | null>(null);
@@ -71,6 +82,11 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
             <span className="flex-1 text-left">{route.origin?.name ?? ""}</span>
             <span className="flex-1 text-right">{route.destination?.name ?? ""}</span>
           </div>
+          {route.eta && (
+            <p className="mt-1 text-center text-xs font-medium text-sky-700">
+              ETA {formatEta(route.eta)}
+            </p>
+          )}
           <p className="mt-1 text-center text-[10px] text-gray-400">
             {CONFIDENCE_LABEL[route.confidence]}
           </p>

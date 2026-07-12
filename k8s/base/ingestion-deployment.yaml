@@ -33,3 +33,7 @@ spec:
               valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_CLIENT_SECRET } }
             - name: POLL_INTERVAL_MS
               value: "30000"
+            - name: AERODATABOX_API_KEY
+              valueFrom: { secretKeyRef: { name: aerodatabox-credentials, key: AERODATABOX_API_KEY } }
+            - name: FIDS_AIRPORT_ICAO
+              value: "KSEA"

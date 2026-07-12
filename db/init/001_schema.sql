@@ -65,3 +65,33 @@ CREATE TABLE IF NOT EXISTS flight_routes (
   found BOOLEAN NOT NULL,
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Cached AeroDataBox FIDS board entries, keyed by callsign (see docs/SPEC.md
+-- §12 tier 1). Only rows with a non-null call_sign are stored — that's our
+-- sole join key against OpenSky's callsign, so a row without one is unusable.
+-- Each row describes one leg (this airport is either origin or destination);
+-- `other_*` fields describe the opposite end of that leg.
+CREATE TABLE IF NOT EXISTS fids_flights (
+  airport_icao TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('departure', 'arrival')),
+  call_sign TEXT NOT NULL,
+  flight_number TEXT,
+  status TEXT,
+  airline_name TEXT,
+  other_icao TEXT,
+  other_iata TEXT,
+  other_name TEXT,
+  other_lat DOUBLE PRECISION,
+  other_lon DOUBLE PRECISION,
+  scheduled_time TIMESTAMPTZ,
+  revised_time TIMESTAMPTZ,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (airport_icao, direction, call_sign)
+);
+
+-- Tracks the last successful FIDS refresh per airport so a service
+-- restart/redeploy doesn't reset the refresh cadence and burn budget.
+CREATE TABLE IF NOT EXISTS fids_refresh_state (
+  airport_icao TEXT PRIMARY KEY,
+  last_fetched_at TIMESTAMPTZ NOT NULL
+);

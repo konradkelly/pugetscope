@@ -1,0 +1,45 @@
+import { config } from "../config.js";
+import { fetchFidsBoard } from "./fidsClient.js";
+import { getLastFetchedAt, replaceBoard } from "../db/fidsFlights.js";
+
+const CHECK_INTERVAL_MS = 5 * 60 * 1000; // just checks whether a refresh is due
+
+async function maybeRefresh(): Promise<void> {
+  const airportIcao = config.aerodatabox.airportIcao;
+  const lastFetchedAt = await getLastFetchedAt(airportIcao);
+  const dueAt = lastFetchedAt
+    ? lastFetchedAt.getTime() + config.aerodatabox.refreshIntervalMs
+    : 0;
+
+  if (Date.now() < dueAt) return;
+
+  try {
+    const flights = await fetchFidsBoard(airportIcao);
+    await replaceBoard(airportIcao, flights);
+    console.log(`[fids] refreshed ${airportIcao} board: ${flights.length} flights`);
+  } catch (err) {
+    console.warn(`[fids] refresh failed for ${airportIcao}, will retry next check:`, (err as Error).message);
+  }
+}
+
+/**
+ * Starts the FIDS board refresh loop, gated on AERODATABOX_API_KEY being set
+ * (opt-in tier-1 enrichment — docs/SPEC.md §12). Checks every 5 min whether a
+ * refresh is due per the configured interval, rather than using a naive
+ * setInterval(fetch, refreshIntervalMs) — that would re-fetch immediately on
+ * every service restart and could burn through the free-tier monthly budget
+ * across frequent redeploys. The due-check reads a persisted last-fetch
+ * timestamp instead, so restarts don't reset the cadence.
+ */
+export function startFidsRefreshWorker(): void {
+  if (!config.aerodatabox.apiKey) {
+    console.log("[fids] AERODATABOX_API_KEY not set — FIDS enrichment disabled");
+    return;
+  }
+  console.log(
+    `[fids] worker started for ${config.aerodatabox.airportIcao}, ` +
+      `refreshing at most every ${config.aerodatabox.refreshIntervalMs / 3_600_000}h`,
+  );
+  void maybeRefresh(); // check immediately in case a refresh is overdue
+  setInterval(() => void maybeRefresh(), CHECK_INTERVAL_MS);
+}
