@@ -32,22 +32,33 @@ function airportFromFids(a: FidsMatch["other"]): Airport {
 /** Builds an authoritative route from a FIDS board match — tier 1 of
  * docs/SPEC.md §12. A "departure" row means this airport is the origin; an
  * "arrival" row means it's the destination, and revisedTime (if present) is
- * a real estimated/actual arrival time, surfaced as eta. */
-function buildFidsRoute(match: FidsMatch): EnrichedRoute {
+ * a real estimated/actual arrival time, surfaced as eta — but only while the
+ * flight is still en route. Once it has arrived (live onGround flag, or the
+ * board's own "Arrived" status) the ETA is dropped rather than left showing
+ * a now-past time for a plane already taxiing at the gate. onGround is the
+ * primary signal since it's live (30s) vs the ~30-min FIDS board. */
+function buildFidsRoute(match: FidsMatch, onGround: boolean): EnrichedRoute {
   const homeRegional = getRegionalAirport(match.homeIcao);
   const home: Airport = homeRegional
     ? { icao: homeRegional.icao, iata: homeRegional.iata, name: homeRegional.name, lat: homeRegional.lat, lon: homeRegional.lon }
     : { icao: match.homeIcao, iata: null, name: null, lat: null, lon: null };
   const other = airportFromFids(match.other);
+
+  // Backstop for the touchdown->taxi window: onGround can lag by a poll or two
+  // after landing, so also treat an ETA more than 10 min in the past as
+  // arrived. 10 min is generous enough not to hide an about-to-land flight
+  // whose estimate merely slipped (those correctly show "any moment").
+  const etaStale =
+    !!match.revisedTime && match.revisedTime.getTime() < Date.now() - 10 * 60 * 1000;
+  const arrived = onGround || match.status === "Arrived" || etaStale;
+  const showEta = match.direction === "arrival" && !!match.revisedTime && !arrived;
+
   return {
     origin: match.direction === "departure" ? home : other,
     destination: match.direction === "arrival" ? home : other,
     airline: match.airlineName,
     confidence: "live",
-    eta:
-      match.direction === "arrival" && match.revisedTime
-        ? match.revisedTime.toISOString()
-        : undefined,
+    eta: showEta ? match.revisedTime!.toISOString() : undefined,
   };
 }
 
@@ -106,7 +117,7 @@ export async function attachRoutes(states: StateVector[]): Promise<EnrichedState
     if (!s.callsign) return inferredFallback;
 
     const fidsMatch = fidsMatches.get(s.callsign);
-    if (fidsMatch) return { ...s, route: buildFidsRoute(fidsMatch) };
+    if (fidsMatch) return { ...s, route: buildFidsRoute(fidsMatch, s.onGround) };
 
     const hit = cachedRoutes.get(s.callsign);
     if (!hit) {
