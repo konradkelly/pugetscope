@@ -37,3 +37,5 @@ spec:
               valueFrom: { secretKeyRef: { name: aerodatabox-credentials, key: AERODATABOX_API_KEY } }
             - name: FIDS_AIRPORT_ICAO
               value: "KSEA"
+            - name: FIDS_REFRESH_INTERVAL_MS
+              value: "1800000" # 30 min — safe under the RapidAPI Pro budget (docs/SPEC.md §12)
