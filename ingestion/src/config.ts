@@ -36,6 +36,9 @@ export const config = {
     // stay well under that (8/day) to leave headroom for dev/test calls and
     // partial months. See docs/SPEC.md §12.
     airportIcao: process.env.FIDS_AIRPORT_ICAO ?? "KSEA",
+    // IANA timezone of the FIDS airport — AeroDataBox expects local-time query
+    // windows, so this must match FIDS_AIRPORT_ICAO's actual timezone.
+    airportTz: process.env.FIDS_AIRPORT_TZ ?? "America/Los_Angeles",
     refreshIntervalMs: Number(process.env.FIDS_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // 3h -> 8 calls/day
   },
 };

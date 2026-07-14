@@ -70,13 +70,21 @@ function toFlight(raw: RawFlight, direction: "departure" | "arrival"): FidsFligh
   };
 }
 
-function formatLocal(d: Date): string {
-  // AeroDataBox wants local time at the airport, no offset, minute precision.
-  // We don't have the airport's timezone handy, so we use UTC — this shifts
-  // the window by the airport's UTC offset but the window itself is wide
-  // enough (12h) that the practical effect is negligible for our purpose
-  // (catching flights around "now"), not worth pulling in a tz database for.
-  return d.toISOString().slice(0, 16);
+function formatLocal(d: Date, timeZone: string): string {
+  // AeroDataBox wants *local time at the airport*, no offset, minute precision
+  // (YYYY-MM-DDTHH:mm). Formatting as UTC instead silently shifted the whole
+  // window by the airport's UTC offset (SEA: -7h/-8h) — enough that the fetched
+  // window was hours off from "now" and never overlapped currently-airborne
+  // traffic. Intl handles DST correctly (PST vs PDT). en-CA gives ISO-ish date
+  // order; hour12:false can emit "24" for midnight, so normalize that to "00".
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
 }
 
 /**
@@ -93,8 +101,9 @@ export async function fetchFidsBoard(airportIcao: string): Promise<FidsFlight[]>
   const from = new Date(now.getTime() - 3 * 60 * 60 * 1000);
   const to = new Date(now.getTime() + 9 * 60 * 60 * 1000);
 
+  const tz = config.aerodatabox.airportTz;
   const url =
-    `${BASE_URL}/flights/airports/icao/${airportIcao}/${formatLocal(from)}/${formatLocal(to)}` +
+    `${BASE_URL}/flights/airports/icao/${airportIcao}/${formatLocal(from, tz)}/${formatLocal(to, tz)}` +
     `?direction=Both&withLeg=false&withCancelled=false`;
 
   const res = await fetch(url, {
