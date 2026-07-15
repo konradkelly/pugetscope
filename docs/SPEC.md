@@ -162,8 +162,8 @@ Progress against the original plan (repo: [github.com/konradkelly/pugetscope](ht
 4. ~~Build frontend map against live WebSocket feed~~ — done: live map, aircraft detail panel, auth UI, verified in-browser against the real pipeline.
 5. ~~Aircraft reference data enrichment~~ — done: one-off `npm run enrich` job in `ingestion/`, verified against the live OpenSky Aircraft Database CSV.
 6. ~~Containerize all four services + local k3d deploy~~ — done: Dockerfiles for all services, raw YAML manifests in `k8s/base/`, nginx-ingress (Traefik disabled), local image registry, verified end-to-end in-browser through the Ingress. See `k8s/README.md`.
-7. **Terraform + cloud infra** (EC2 for kubeadm cluster, RDS, ElastiCache) — not started. Next up.
-8. Self-managed K8s on EC2 via kubeadm (single control-plane first, per §9).
+7. ~~Terraform + cloud infra~~ — done: VPC (public subnets for K8s nodes, private for RDS/ElastiCache, no NAT gateway), RDS Postgres, ElastiCache Redis, 4 ECR repos, EC2 instance role + GitHub Actions OIDC role, and 2 EC2 nodes (1 control-plane + 1 worker) with containerd/kubeadm/kubelet pre-installed via user-data — applied live to AWS (us-west-2). See `terraform/README.md`. `kubeadm init`/`join` deliberately not run yet — that's Phase 2.
+8. Self-managed K8s on EC2 via kubeadm (single control-plane first, per §9). Next up.
 9. Multi control-plane HA rebuild (deliberate later milestone, per §9).
 
 First v2 feature (independent of the infra track above): **flight routing enrichment**, fully specced in §12.

@@ -8,6 +8,7 @@ build/
 .terraform/
 *.tfstate
 *.tfstate.backup
+terraform.tfvars
 .vscode/
 .idea/
 k8s/secrets.env
