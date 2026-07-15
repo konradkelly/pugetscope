@@ -148,9 +148,13 @@ Since the decision is to design for Kubernetes from the start, but the app itsel
 
 CI/CD: GitHub Actions builds images on push, pushes to ECR, applies Terraform on infra changes, applies K8s manifests on app changes (separate pipelines).
 
+**Managed vs. self-hosted Postgres/Redis (under consideration, not yet decided):** Phase 1 as built uses RDS (Postgres+PostGIS) and ElastiCache (Redis) — managed services, ~$26/mo combined (db.t4g.micro + cache.t4g.micro). The alternative is running both as K8s pods on the existing EC2 worker node(s), backed by EBS PersistentVolumes — which is exactly what Phase 0's `postgres-deployment.yaml`/`redis-deployment.yaml` already do locally, just extended into the EC2 cluster instead of swapped for managed services. Since the node compute is already paid for, the marginal cost there is closer to $3–4/mo (EBS storage only), roughly $20/mo cheaper. Tradeoff: RDS/ElastiCache provide backups, patching, and failover for free; self-hosted means owning PITR/backup scripts and disk-failure recovery. Arguably more consistent with this project's own thesis (self-managed K8s over EKS — operate infra yourself rather than lean on managed services), but that's a real ops-surface increase, not a free upgrade. Revisit before or during Phase 2.
+
 ## 10. Open Questions
 
-None outstanding — all resolved (see decisions inline above): manifest management, cluster HA staging, aircraft reference enrichment source, aircraft icon licensing, domain/hosting budget.
+- Managed (RDS/ElastiCache) vs. self-hosted (K8s pods on EC2 workers) for Postgres/Redis — see cost/tradeoff note above in §9. Leaning toward self-hosted for cost + thesis-consistency, not yet committed.
+
+Otherwise resolved (see decisions inline above): manifest management, cluster HA staging, aircraft reference enrichment source, aircraft icon licensing, domain/hosting budget.
 
 ## 11. Next Steps
 
@@ -163,7 +167,7 @@ Progress against the original plan (repo: [github.com/konradkelly/pugetscope](ht
 5. ~~Aircraft reference data enrichment~~ — done: one-off `npm run enrich` job in `ingestion/`, verified against the live OpenSky Aircraft Database CSV.
 6. ~~Containerize all four services + local k3d deploy~~ — done: Dockerfiles for all services, raw YAML manifests in `k8s/base/`, nginx-ingress (Traefik disabled), local image registry, verified end-to-end in-browser through the Ingress. See `k8s/README.md`.
 7. ~~Terraform + cloud infra~~ — done: VPC (public subnets for K8s nodes, private for RDS/ElastiCache, no NAT gateway), RDS Postgres, ElastiCache Redis, 4 ECR repos, EC2 instance role + GitHub Actions OIDC role, and 2 EC2 nodes (1 control-plane + 1 worker) with containerd/kubeadm/kubelet pre-installed via user-data — applied live to AWS (us-west-2). See `terraform/README.md`. `kubeadm init`/`join` deliberately not run yet — that's Phase 2.
-8. Self-managed K8s on EC2 via kubeadm (single control-plane first, per §9). Next up.
+8. ~~Self-managed K8s on EC2 via kubeadm~~ — done: kubeadm-bootstrapped cluster (1 control-plane + 1 worker, Flannel CNI, baremetal/NodePort ingress-nginx) on the Phase 1 nodes, all via SSM (no SSH key exists on these instances by design). `k8s/` restructured to Kustomize (`base/` + `overlays/{local,ec2}`, with in-cluster Postgres/Redis pulled out into an opt-in `base/datastores` Component so `overlays/ec2` can use RDS/ElastiCache while `overlays/local` keeps k3d's in-cluster datastores — keeps the §9/§10 managed-vs-self-hosted question genuinely open). App deployed and reachable at a temporary nip.io hostname; RDS schema bootstrapped via a one-off Job (Terraform can't run SQL); ECR image pulls need their own refreshed pull secret (self-managed kubelet has no built-in ECR credential provider, unlike EKS). See `k8s/README.md` "EC2 cluster" section for full details, including two things surfaced during this pass and *not yet resolved*: (1) OpenSky Network appears to block AWS IP ranges — `ingestion` reaches RDS/Redis fine but its OpenSky polls time out, verified at the node level, so no live aircraft data flows through this deployment yet; (2) the EC2 Terraform user-data was missing `conntrack`/`ebtables`/`socat` (kubeadm preflight deps, fixed in `terraform/modules/ec2/templates/node-init.sh.tpl` for future nodes) — installed by hand on the two live nodes, but applying that Terraform fix now would replace both running nodes (`user_data_replace_on_change = true`), so it's deliberately *not* applied yet.
 9. Multi control-plane HA rebuild (deliberate later milestone, per §9).
 
 First v2 feature (independent of the infra track above): **flight routing enrichment**, fully specced in §12.

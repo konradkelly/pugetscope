@@ -1,0 +1,15 @@
+# Environment-agnostic resources. Datastore host/port comes from a
+# `datastore-config` ConfigMap that each overlay supplies (configMapGenerator)
+# — not defined here, since there's no sensible shared default between
+# in-cluster Services (local) and RDS/ElastiCache endpoints (ec2).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - api-deployment.yaml
+  - ingestion-deployment.yaml
+  - websocket-deployment.yaml
+  - frontend-deployment.yaml
+  - ingress.yaml
+  - postgres-configmap.yaml

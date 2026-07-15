@@ -1,0 +1,122 @@
+# Self-managed K8s on EC2 (kubeadm, see docs/SPEC.md §9 Phase 2). Points at
+# the RDS/ElastiCache endpoints from Phase 1 Terraform instead of in-cluster
+# Postgres/Redis (no datastores component here), and at ECR instead of the
+# local k3d registry.
+#
+# Ingress host is a temporary nip.io hostname tied to a node's current public
+# IP (NodePort routes through either node regardless of which one runs the
+# ingress-nginx pod) — replace once an Elastic IP + real domain exist.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: pugetscope
+
+resources:
+  - ../../base
+  - schema-init-job.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: datastore-config
+    literals:
+      - POSTGRES_HOST=pugetscope-postgres.cjce4w08oh69.us-west-2.rds.amazonaws.com
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=pugetscope-redis.2mtjpt.0001.usw2.cache.amazonaws.com
+      - REDIS_PORT=6379
+
+images:
+  - name: pugetscope/api
+    newName: 675901257165.dkr.ecr.us-west-2.amazonaws.com/pugetscope/api
+    newTag: ec2-latest
+  - name: pugetscope/ingestion
+    newName: 675901257165.dkr.ecr.us-west-2.amazonaws.com/pugetscope/ingestion
+    newTag: ec2-latest
+  - name: pugetscope/websocket
+    newName: 675901257165.dkr.ecr.us-west-2.amazonaws.com/pugetscope/websocket
+    newTag: ec2-latest
+  - name: pugetscope/frontend
+    newName: 675901257165.dkr.ecr.us-west-2.amazonaws.com/pugetscope/frontend
+    newTag: ec2-latest
+
+patches:
+  - target:
+      kind: Ingress
+      name: pugetscope-api
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: pugetscope.54.185.209.165.nip.io
+  - target:
+      kind: Ingress
+      name: pugetscope-app
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: pugetscope.54.185.209.165.nip.io
+  # imagePullSecrets on all 4 app Deployments — self-managed kubelet has no
+  # built-in ECR credential provider (unlike EKS), so pulls need an explicit
+  # docker-registry secret (created by create-secrets-ec2.sh).
+  - target:
+      kind: Deployment
+      name: api
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+      spec:
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ecr-registry
+            containers:
+              - name: api
+                env:
+                  - name: CORS_ORIGIN
+                    value: http://pugetscope.54.185.209.165.nip.io:31097
+  - target:
+      kind: Deployment
+      name: websocket
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: websocket
+      spec:
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ecr-registry
+            containers:
+              - name: websocket
+                env:
+                  - name: CORS_ORIGIN
+                    value: http://pugetscope.54.185.209.165.nip.io:31097
+  - target:
+      kind: Deployment
+      name: ingestion
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ingestion
+      spec:
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ecr-registry
+  - target:
+      kind: Deployment
+      name: frontend
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            imagePullSecrets:
+              - name: ecr-registry

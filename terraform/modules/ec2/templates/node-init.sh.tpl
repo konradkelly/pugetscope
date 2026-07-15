@@ -52,6 +52,12 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
   > /etc/apt/sources.list.d/kubernetes.list
 apt-get update
 apt-get install -y kubelet kubeadm kubectl
+
+# kubeadm preflight requires these but doesn't install them itself — found by
+# `kubeadm init` failing with `[ERROR FileExisting-conntrack]` on a from-scratch
+# node.
+apt-get install -y conntrack ebtables ethtool socat
+
 apt-mark hold kubelet kubeadm kubectl
 
 systemctl enable kubelet

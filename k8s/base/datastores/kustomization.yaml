@@ -1,0 +1,11 @@
+# Kustomize Component (not a base) — deliberately opt-in per overlay. Only
+# overlays/local includes this; overlays/ec2 uses RDS/ElastiCache instead
+# (datastore-config ConfigMap points at their endpoints there — see
+# docs/SPEC.md §9 "managed vs. self-hosted" for why this stays a live option).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - postgres-deployment.yaml
+  - postgres-pvc.yaml
+  - redis-deployment.yaml

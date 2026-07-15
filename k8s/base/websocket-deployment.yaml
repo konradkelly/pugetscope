@@ -15,14 +15,18 @@ spec:
     spec:
       containers:
         - name: websocket
-          image: pugetscope-registry:5000/pugetscope-websocket:latest
+          image: pugetscope/websocket:latest
           ports:
             - containerPort: 3001
           env:
             - name: PORT
               value: "3001"
+            - name: REDIS_HOST
+              valueFrom: { configMapKeyRef: { name: datastore-config, key: REDIS_HOST } }
+            - name: REDIS_PORT
+              valueFrom: { configMapKeyRef: { name: datastore-config, key: REDIS_PORT } }
             - name: REDIS_URL
-              value: "redis://redis:6379"
+              value: "redis://$(REDIS_HOST):$(REDIS_PORT)"
             - name: CORS_ORIGIN
               value: "http://pugetscope.127.0.0.1.nip.io:8081"
           readinessProbe:

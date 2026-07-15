@@ -74,7 +74,7 @@ full_setup() {
   ensure_secrets
 
   log "Deploying manifests"
-  kubectl apply -f k8s/base/
+  kubectl apply -k k8s/overlays/local
 }
 
 # --- main -------------------------------------------------------------------
@@ -94,7 +94,7 @@ else
     fix_kubeconfig_if_needed
     build_and_push
     ensure_secrets
-    kubectl apply -f k8s/base/
+    kubectl apply -k k8s/overlays/local
     # Only bounce the app services to pick up freshly-pushed images — leave
     # postgres/redis alone so a code redeploy never cycles the database.
     for svc in "${SERVICES[@]}"; do
