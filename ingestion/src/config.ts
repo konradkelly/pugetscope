@@ -26,6 +26,9 @@ export const config = {
     connectionString:
       process.env.DATABASE_URL ??
       "postgres://pugetscope:pugetscope@localhost:5432/pugetscope",
+    // See api/src/config.ts for why this is conditional and why
+    // rejectUnauthorized is false.
+    ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : undefined,
   },
   // Optional (not requireEnv): FIDS is an opt-in tier-1 enrichment (docs/SPEC.md
   // §12) — without a key, attachRoutes just falls back to tiers 2/3 as before.

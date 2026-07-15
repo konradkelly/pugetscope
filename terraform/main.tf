@@ -70,3 +70,11 @@ module "ec2" {
   worker_instance_type        = var.worker_instance_type
   k8s_minor_version           = var.k8s_minor_version
 }
+
+module "route53" {
+  source = "./modules/route53"
+
+  project     = var.project
+  domain_name = var.domain_name
+  ingress_ip  = module.ec2.ingress_public_ip
+}

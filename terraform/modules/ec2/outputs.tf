@@ -15,3 +15,8 @@ output "control_plane_names" {
 output "worker_names" {
   value = [for name, node in local.nodes : name if node.role == "worker"]
 }
+
+output "ingress_public_ip" {
+  description = "Stable Elastic IP — point DNS at this, not a node's own (ephemeral) public_ip."
+  value       = aws_eip.ingress.public_ip
+}

@@ -48,7 +48,7 @@ kubectl get pods -n pugetscope
 
 cat <<'EOF'
 
-Stack is up. Open:  http://pugetscope.54.185.209.165.nip.io:31097
+Stack is up. Open:  https://pugetscope.com/
 
 Useful follow-ups:
   kubectl --kubeconfig k8s/ec2-kubeconfig get pods -n pugetscope -w

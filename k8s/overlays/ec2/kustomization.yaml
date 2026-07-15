@@ -3,9 +3,13 @@
 # Postgres/Redis (no datastores component here), and at ECR instead of the
 # local k3d registry.
 #
-# Ingress host is a temporary nip.io hostname tied to a node's current public
-# IP (NodePort routes through either node regardless of which one runs the
-# ingress-nginx pod) — replace once an Elastic IP + real domain exist.
+# Ingress host is pugetscope.com, resolving via Route 53 to the Elastic IP
+# (terraform/modules/ec2's aws_eip.ingress) — stable across node stop/start,
+# unlike a node's own public IP. TLS via cert-manager + Let's Encrypt (ACME
+# HTTP-01): only pugetscope-app carries the cert-manager annotation and
+# drives issuance; pugetscope-api just references the same secretName so
+# both Ingresses serve TLS from one cert without cert-manager racing to
+# create two Certificates for the same Secret.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -23,6 +27,7 @@ configMapGenerator:
     literals:
       - POSTGRES_HOST=pugetscope-postgres.cjce4w08oh69.us-west-2.rds.amazonaws.com
       - POSTGRES_PORT=5432
+      - POSTGRES_SSL=true
       - REDIS_HOST=pugetscope-redis.2mtjpt.0001.usw2.cache.amazonaws.com
       - REDIS_PORT=6379
 
@@ -47,14 +52,27 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: pugetscope.54.185.209.165.nip.io
+        value: pugetscope.com
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [pugetscope.com]
+            secretName: pugetscope-tls
   - target:
       kind: Ingress
       name: pugetscope-app
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: pugetscope.54.185.209.165.nip.io
+        value: pugetscope.com
+      - op: add
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-prod
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [pugetscope.com]
+            secretName: pugetscope-tls
   # imagePullSecrets on all 4 app Deployments — self-managed kubelet has no
   # built-in ECR credential provider (unlike EKS), so pulls need an explicit
   # docker-registry secret (created by create-secrets-ec2.sh).
@@ -75,7 +93,7 @@ patches:
               - name: api
                 env:
                   - name: CORS_ORIGIN
-                    value: http://pugetscope.54.185.209.165.nip.io:31097
+                    value: https://pugetscope.com
   - target:
       kind: Deployment
       name: websocket
@@ -93,7 +111,7 @@ patches:
               - name: websocket
                 env:
                   - name: CORS_ORIGIN
-                    value: http://pugetscope.54.185.209.165.nip.io:31097
+                    value: https://pugetscope.com
   - target:
       kind: Deployment
       name: ingestion

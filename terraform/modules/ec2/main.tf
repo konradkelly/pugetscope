@@ -57,3 +57,18 @@ resource "aws_instance" "node" {
     Role = each.value.role
   }
 }
+
+# Stable public IP for DNS (pugetscope.com) to point at. Attached to the
+# control-plane node specifically, but functionally it doesn't matter which
+# node holds it — the ingress-nginx Service is a NodePort, and kube-proxy
+# forwards traffic hitting *any* node's NodePort to the right pod cluster-wide
+# regardless of which node it's actually running on. An EIP also solves the
+# "public IP changes on stop/start" problem for whichever instance holds it.
+resource "aws_eip" "ingress" {
+  domain   = "vpc"
+  instance = aws_instance.node["control-plane-1"].id
+
+  tags = {
+    Name = "${var.project}-ingress-eip"
+  }
+}

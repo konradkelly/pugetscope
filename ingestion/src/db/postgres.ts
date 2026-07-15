@@ -2,7 +2,10 @@ import pg from "pg";
 import { config } from "../config.js";
 import type { StateVector } from "../openskyClient.js";
 
-export const pool = new pg.Pool({ connectionString: config.postgres.connectionString });
+export const pool = new pg.Pool({
+  connectionString: config.postgres.connectionString,
+  ssl: config.postgres.ssl,
+});
 
 export async function insertPositions(states: StateVector[]): Promise<void> {
   if (states.length === 0) return;

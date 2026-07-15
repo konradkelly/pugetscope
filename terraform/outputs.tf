@@ -39,3 +39,13 @@ output "k8s_worker_names" {
 output "github_actions_role_arn" {
   value = module.iam.github_actions_role_arn
 }
+
+output "ingress_public_ip" {
+  description = "Elastic IP — stable across node stop/start, unlike a node's own public_ip."
+  value       = module.ec2.ingress_public_ip
+}
+
+output "route53_name_servers" {
+  description = "Set these as pugetscope.com's nameservers at Hostinger (registrar) to delegate DNS to this Route 53 zone."
+  value       = module.route53.name_servers
+}

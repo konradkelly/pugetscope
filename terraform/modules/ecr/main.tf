@@ -1,7 +1,7 @@
 resource "aws_ecr_repository" "service" {
   for_each = toset(var.repository_names)
 
-  name                 = "${var.project}/${each.value}"
+  name = "${var.project}/${each.value}"
   # MUTABLE: k8s/push-ecr.sh and the local k3d workflow both push a floating
   # :latest-style tag on every build (ec2-latest / latest respectively), the
   # same pattern already used for the local registry — not versioned by git

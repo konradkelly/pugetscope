@@ -10,8 +10,7 @@ REGION=us-west-2
 ACCOUNT_ID=675901257165
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 TAG=ec2-latest
-INGRESS_HOST="pugetscope.54.185.209.165.nip.io"
-INGRESS_PORT=31097
+DOMAIN="pugetscope.com"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -29,8 +28,8 @@ done
 
 log "Building + pushing frontend (ec2 build args)"
 docker build \
-  --build-arg VITE_API_URL="http://${INGRESS_HOST}:${INGRESS_PORT}/api" \
-  --build-arg VITE_WS_URL="ws://${INGRESS_HOST}:${INGRESS_PORT}/live" \
+  --build-arg VITE_API_URL="https://${DOMAIN}/api" \
+  --build-arg VITE_WS_URL="wss://${DOMAIN}/live" \
   -t "$REGISTRY/pugetscope/frontend:$TAG" ./frontend
 docker push "$REGISTRY/pugetscope/frontend:$TAG"
 

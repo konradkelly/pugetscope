@@ -9,6 +9,12 @@ variable "aws_region" {
   default = "us-west-2"
 }
 
+variable "domain_name" {
+  description = "Registered at Hostinger (registrar only — see docs/SPEC.md top). This Route 53 zone becomes authoritative for it once Hostinger's nameservers are pointed at module.route53's name_servers output."
+  type        = string
+  default     = "pugetscope.com"
+}
+
 variable "github_repo" {
   description = "GitHub \"owner/repo\" allowed to assume the CI role via OIDC."
   type        = string
