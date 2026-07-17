@@ -18,6 +18,7 @@ namespace: pugetscope
 resources:
   - ../../base
   - schema-init-job.yaml
+  - ecr-refresh-cronjob.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

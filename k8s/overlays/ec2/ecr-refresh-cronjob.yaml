@@ -1,0 +1,82 @@
+# ECR auth tokens expire after 12h, and self-managed kubelet has no built-in
+# ECR credential provider (unlike EKS) — see create-secrets-ec2.sh. Without
+# this, a pod rescheduled >12h after the last manual secret refresh hits
+# ImagePullBackOff (happened in practice). Runs every 6h (2x safety margin)
+# on the same node IAM role the app pods already use for ECR pulls
+# (terraform/modules/iam's ec2_node role has AmazonEC2ContainerRegistryReadOnly)
+# — no extra AWS credentials needed, since IMDS is reachable from pods here
+# (hop limit 2, confirmed on both nodes).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ecr-refresher
+  namespace: pugetscope
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ecr-refresher
+  namespace: pugetscope
+rules:
+  # Refresh only — no "create", since resourceNames can't scope create and
+  # the secret already exists (bootstrapped by create-secrets-ec2.sh). A
+  # from-scratch namespace rebuild re-runs that script anyway.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["ecr-registry"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ecr-refresher
+  namespace: pugetscope
+subjects:
+  - kind: ServiceAccount
+    name: ecr-refresher
+    namespace: pugetscope
+roleRef:
+  kind: Role
+  name: ecr-refresher
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecr-refresh
+  namespace: pugetscope
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: ecr-refresher
+          restartPolicy: Never
+          containers:
+            # Single image (Amazon Linux + AWS CLI, has curl + /bin/sh) rather
+            # than a separate kubectl image — avoids depending on a
+            # third-party registry's kubectl tags staying available (bitnami/kubectl
+            # dropped versioned tags in 2025; rancher/kubectl is distroless,
+            # no shell to pipe through). kubectl itself is fetched straight
+            # from Kubernetes' own release endpoint, pinned to the cluster's
+            # minor version (terraform's k8s_minor_version = 1.31).
+            - name: refresh-ecr-secret
+              image: amazon/aws-cli:2.17.62
+              command: ["/bin/sh", "-c"]
+              args:
+                - >
+                  set -e &&
+                  curl -sL -o /tmp/kubectl https://dl.k8s.io/release/v1.31.1/bin/linux/amd64/kubectl &&
+                  chmod +x /tmp/kubectl &&
+                  TOKEN=$(aws ecr get-login-password --region us-west-2) &&
+                  /tmp/kubectl create secret docker-registry ecr-registry
+                  --namespace pugetscope
+                  --docker-server=675901257165.dkr.ecr.us-west-2.amazonaws.com
+                  --docker-username=AWS
+                  --docker-password="$TOKEN"
+                  --dry-run=client -o yaml | /tmp/kubectl apply -f -
