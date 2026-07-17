@@ -31,7 +31,7 @@ async function maybeRefresh(): Promise<void> {
  * (opt-in tier-1 enrichment — docs/SPEC.md §12). Checks every 5 min whether a
  * refresh is due per the configured interval, rather than using a naive
  * setInterval(fetch, refreshIntervalMs) — that would re-fetch immediately on
- * every service restart and could burn through the free-tier monthly budget
+ * every service restart and could burn through the monthly request budget
  * across frequent redeploys. The due-check reads a persisted last-fetch
  * timestamp instead, so restarts don't reset the cadence.
  */
@@ -42,7 +42,7 @@ export function startFidsRefreshWorker(): void {
   }
   console.log(
     `[fids] worker started for ${config.aerodatabox.airportIcao}, ` +
-      `refreshing at most every ${config.aerodatabox.refreshIntervalMs / 3_600_000}h`,
+      `refreshing at most every ${config.aerodatabox.refreshIntervalMs / 60_000}min`,
   );
   void maybeRefresh(); // check immediately in case a refresh is overdue
   setInterval(() => void maybeRefresh(), CHECK_INTERVAL_MS);

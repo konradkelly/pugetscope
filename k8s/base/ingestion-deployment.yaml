@@ -42,6 +42,8 @@ spec:
               valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_CLIENT_ID } }
             - name: OPENSKY_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_CLIENT_SECRET } }
+            - name: OPENSKY_PROXY_URL
+              valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_PROXY_URL, optional: true } }
             - name: POLL_INTERVAL_MS
               value: "30000"
             - name: AERODATABOX_API_KEY
@@ -49,4 +51,4 @@ spec:
             - name: FIDS_AIRPORT_ICAO
               value: "KSEA"
             - name: FIDS_REFRESH_INTERVAL_MS
-              value: "1800000" # 30 min — safe under the RapidAPI Pro budget (docs/SPEC.md §12)
+              value: "300000" # 5 min — RapidAPI Ultra plan (60k req/mo); ~8.6k calls/mo at 2 units/call, well under budget (docs/SPEC.md §12)
