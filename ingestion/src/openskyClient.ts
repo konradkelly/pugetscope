@@ -1,4 +1,11 @@
+import { fetch, ProxyAgent, type Dispatcher } from "undici";
 import { config } from "./config.js";
+
+// Shared across both OpenSky calls (token + states) — undefined dispatcher
+// falls back to undici's default (direct connection).
+const proxyAgent: Dispatcher | undefined = config.opensky.proxyUrl
+  ? new ProxyAgent(config.opensky.proxyUrl)
+  : undefined;
 
 interface TokenResponse {
   access_token: string;
@@ -61,6 +68,7 @@ async function fetchToken(): Promise<string> {
       client_id: config.opensky.clientId,
       client_secret: config.opensky.clientSecret,
     }),
+    dispatcher: proxyAgent,
   });
 
   if (!res.ok) {
@@ -114,6 +122,7 @@ export async function fetchPugetSoundStates(): Promise<StateVector[]> {
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
+    dispatcher: proxyAgent,
   });
 
   if (res.status === 401) {

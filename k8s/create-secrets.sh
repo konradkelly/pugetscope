@@ -28,6 +28,7 @@ kubectl create secret generic opensky-credentials \
   --namespace pugetscope \
   --from-literal=OPENSKY_CLIENT_ID="$OPENSKY_CLIENT_ID" \
   --from-literal=OPENSKY_CLIENT_SECRET="$OPENSKY_CLIENT_SECRET" \
+  --from-literal=OPENSKY_PROXY_URL="${OPENSKY_PROXY_URL:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Optional — AERODATABOX_API_KEY may be blank in secrets.env (FIDS disabled).
