@@ -1,0 +1,69 @@
+# Dedicated, self-hosted Postgres for Umami analytics — deliberately separate
+# from the main app's flight-tracking DB (RDS on ec2, in-cluster locally).
+# Unlike that one, this never forks between environments: it's always
+# self-hosted (own PVC), in both local and ec2, since Umami's storage needs
+# are tiny and not worth a managed RDS instance.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: umami-postgres-data
+  namespace: pugetscope
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: umami-postgres
+  namespace: pugetscope
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # single ReadWriteOnce volume — never run 2 postgres pods at once
+  selector:
+    matchLabels:
+      app: umami-postgres
+  template:
+    metadata:
+      labels:
+        app: umami-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine # no PostGIS needed — Umami has no spatial data
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: umami-db-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          readinessProbe:
+            # exec.command array elements are NOT substituted by k8s's $(VAR)
+            # mechanism (that only applies to a container's own command/args)
+            # — wrap in a real shell so $POSTGRES_USER actually expands.
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: umami-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: umami-postgres
+  namespace: pugetscope
+spec:
+  selector:
+    app: umami-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

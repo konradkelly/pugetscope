@@ -51,6 +51,18 @@ kubectl create secret generic aerodatabox-credentials \
   --from-literal=AERODATABOX_API_KEY="${AERODATABOX_API_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+kubectl create secret generic umami-credentials \
+  --namespace pugetscope \
+  --from-literal=APP_SECRET="$UMAMI_APP_SECRET" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic umami-db-credentials \
+  --namespace pugetscope \
+  --from-literal=POSTGRES_USER=umami \
+  --from-literal=POSTGRES_PASSWORD="$UMAMI_DB_PASSWORD" \
+  --from-literal=POSTGRES_DB=umami \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # ECR image pulls need auth (unlike EKS, self-managed kubelet has no built-in
 # ECR credential provider). The token is only valid ~12h, so this secret is
 # only as fresh as the last `create-secrets-ec2.sh` / `up-ec2.sh` run — fine

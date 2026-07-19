@@ -18,3 +18,13 @@ resource "aws_route53_record" "apex" {
   ttl     = 300
   records = [var.ingress_ip]
 }
+
+# Self-hosted Umami analytics dashboard/collector — same Elastic IP, ingress-nginx
+# host-routes it to the umami Service (k8s/base/ingress.yaml, pugetscope-analytics).
+resource "aws_route53_record" "analytics" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = "analytics.${var.domain_name}"
+  type    = "A"
+  ttl     = 300
+  records = [var.ingress_ip]
+}

@@ -1,0 +1,55 @@
+# Self-hosted Umami analytics — see docs/SPEC.md for why (neither Hostinger
+# nor AWS track pugetscope.com views out of the box). Public image (ghcr.io),
+# no ECR pull secret needed. Exposed via the pugetscope-analytics Ingress
+# (analytics.pugetscope.com on ec2) since Umami's tracking script runs in
+# visitors' browsers and needs a publicly reachable collector endpoint.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: umami
+  namespace: pugetscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: umami
+  template:
+    metadata:
+      labels:
+        app: umami
+    spec:
+      containers:
+        - name: umami
+          image: ghcr.io/umami-software/umami:postgresql-latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: umami-db-credentials, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: umami-db-credentials, key: POSTGRES_PASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: umami-db-credentials, key: POSTGRES_DB } }
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@umami-postgres:5432/$(POSTGRES_DB)"
+            - name: APP_SECRET
+              valueFrom: { secretKeyRef: { name: umami-credentials, key: APP_SECRET } }
+          readinessProbe:
+            # TCP rather than an HTTP path — avoids depending on a specific
+            # Umami API route that might differ across image versions.
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: umami
+  namespace: pugetscope
+spec:
+  selector:
+    app: umami
+  ports:
+    - port: 3000
+      targetPort: 3000

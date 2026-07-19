@@ -37,4 +37,16 @@ kubectl create secret generic aerodatabox-credentials \
   --from-literal=AERODATABOX_API_KEY="${AERODATABOX_API_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+kubectl create secret generic umami-credentials \
+  --namespace pugetscope \
+  --from-literal=APP_SECRET="$UMAMI_APP_SECRET" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic umami-db-credentials \
+  --namespace pugetscope \
+  --from-literal=POSTGRES_USER=umami \
+  --from-literal=POSTGRES_PASSWORD="$UMAMI_DB_PASSWORD" \
+  --from-literal=POSTGRES_DB=umami \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 echo "Secrets created/updated in namespace pugetscope."

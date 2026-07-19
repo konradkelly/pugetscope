@@ -72,7 +72,19 @@ patches:
       - op: add
         path: /spec/tls
         value:
-          - hosts: [pugetscope.com]
+          - hosts: [pugetscope.com, analytics.pugetscope.com]
+            secretName: pugetscope-tls
+  - target:
+      kind: Ingress
+      name: pugetscope-analytics
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: analytics.pugetscope.com
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [analytics.pugetscope.com]
             secretName: pugetscope-tls
   # imagePullSecrets on all 4 app Deployments — self-managed kubelet has no
   # built-in ECR credential provider (unlike EKS), so pulls need an explicit

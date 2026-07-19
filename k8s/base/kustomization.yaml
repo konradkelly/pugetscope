@@ -13,3 +13,5 @@ resources:
   - frontend-deployment.yaml
   - ingress.yaml
   - postgres-configmap.yaml
+  - umami-postgres.yaml
+  - umami-deployment.yaml
