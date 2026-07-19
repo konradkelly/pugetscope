@@ -48,7 +48,10 @@ spec:
               value: "30000"
             - name: AERODATABOX_API_KEY
               valueFrom: { secretKeyRef: { name: aerodatabox-credentials, key: AERODATABOX_API_KEY } }
-            - name: FIDS_AIRPORT_ICAO
-              value: "KSEA"
-            - name: FIDS_REFRESH_INTERVAL_MS
-              value: "300000" # 5 min — RapidAPI Ultra plan (60k req/mo); ~8.6k calls/mo at 2 units/call, well under budget (docs/SPEC.md §12)
+            - name: FIDS_PRIMARY_REFRESH_INTERVAL_MS
+              value: "300000" # 5 min for KSEA
+            - name: FIDS_SECONDARY_REFRESH_INTERVAL_MS
+              value: "600000" # 10 min for PAE/BFI/RNT/TIW
+              # RapidAPI Ultra plan (60k units/mo, 2 units/call): KSEA ~8.6k
+              # calls/mo (~17.3k units) + 4 fields ~4.3k calls/mo each (~34.6k
+              # units total) = ~51.8k units/mo, ~14% headroom (docs/SPEC.md §12)

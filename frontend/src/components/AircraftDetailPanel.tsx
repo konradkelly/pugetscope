@@ -19,7 +19,6 @@ function airportCode(a: Airport | null | undefined): string {
 const CONFIDENCE_LABEL: Record<RouteConfidence, string> = {
   live: "confirmed live — airport schedule match",
   inferred: "inferred from live position",
-  typical: "typical route for this callsign — not confirmed live",
 };
 
 function formatEta(iso: string): string {

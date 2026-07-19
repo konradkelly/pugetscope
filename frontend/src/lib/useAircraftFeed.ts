@@ -9,10 +9,9 @@ export interface Airport {
   lon: number | null;
 }
 
-// "typical" = adsbdb's crowd-sourced route, unverified against this specific
-// flight. "inferred" = own-track geometry inference. "live" = a real FIDS
-// board match — see docs/SPEC.md §12.
-export type RouteConfidence = "live" | "inferred" | "typical";
+// "inferred" = own-track geometry inference (the final fallback). "live" =
+// a real FIDS board match — see docs/SPEC.md §12.
+export type RouteConfidence = "live" | "inferred";
 
 export interface FlightRoute {
   origin: Airport | null;
@@ -38,7 +37,7 @@ export interface StateVector {
   geoAltitude: number | null;
   squawk: string | null;
   spi: boolean;
-  // Present only when adsbdb had a route for this callsign (docs/SPEC.md §12).
+  // Present only when a route was resolved for this callsign (docs/SPEC.md §12).
   route?: FlightRoute;
 }
 

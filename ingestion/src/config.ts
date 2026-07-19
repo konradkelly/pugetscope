@@ -36,16 +36,19 @@ export const config = {
     ssl: process.env.POSTGRES_SSL === "true" ? { rejectUnauthorized: false } : undefined,
   },
   // Optional (not requireEnv): FIDS is an opt-in tier-1 enrichment (docs/SPEC.md
-  // §12) — without a key, attachRoutes just falls back to tiers 2/3 as before.
+  // §12) — without a key, attachRoutes just falls back to tier 2 (own-track
+  // inference) as before.
   aerodatabox: {
     apiKey: process.env.AERODATABOX_API_KEY ?? null,
-    // RapidAPI ULTRA plan: 60,000 units/mo, FIDS is a TIER 2 endpoint (2
-    // units/call) -> 30,000 calls/mo budget. At one airport, the deployed 5 min
-    // interval is ~8.6k calls/mo, well under that. See docs/SPEC.md §12.
-    airportIcao: process.env.FIDS_AIRPORT_ICAO ?? "KSEA",
-    // IANA timezone of the FIDS airport — AeroDataBox expects local-time query
-    // windows, so this must match FIDS_AIRPORT_ICAO's actual timezone.
+    // IANA timezone of the FIDS airports — AeroDataBox expects local-time query
+    // windows. All 5 regional airports (see regionalAirports.ts) share this zone.
     airportTz: process.env.FIDS_AIRPORT_TZ ?? "America/Los_Angeles",
-    refreshIntervalMs: Number(process.env.FIDS_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // fallback only; deployment sets 5 min
+    // RapidAPI ULTRA plan: 60,000 units/mo, FIDS is a TIER 2 endpoint (2
+    // units/call) -> 30,000 calls/mo budget. KSEA at 5 min = ~8.6k calls/mo
+    // (~17.3k units); the other 4 regional fields at 10 min = ~4.3k calls/mo
+    // each (~34.6k units total) — combined ~51.8k units/mo, ~14% headroom.
+    // See docs/SPEC.md §12.
+    primaryRefreshIntervalMs: Number(process.env.FIDS_PRIMARY_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // fallback only; deployment sets 5 min for KSEA
+    secondaryRefreshIntervalMs: Number(process.env.FIDS_SECONDARY_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // fallback only; deployment sets 10 min for PAE/BFI/RNT/TIW
   },
 };

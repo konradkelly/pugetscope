@@ -1,5 +1,10 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 
+-- One-off: adsbdb tier removed in favor of AeroDataBox FIDS coverage across
+-- all 5 regional airports (see docs/SPEC.md §12) — safe/idempotent to leave
+-- here permanently since this script is re-run against the live DB too.
+DROP TABLE IF EXISTS flight_routes;
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
@@ -44,26 +49,6 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   key TEXT NOT NULL,
   value TEXT,
   PRIMARY KEY (user_id, key)
-);
-
--- Cached callsign -> route lookups from adsbdb (see docs/SPEC.md §12).
--- Keyed by callsign (a flight number). `found = false` negative-caches misses
--- (GA/military callsigns that never resolve) so we don't re-hammer the free API.
-CREATE TABLE IF NOT EXISTS flight_routes (
-  callsign TEXT PRIMARY KEY,
-  origin_icao TEXT,
-  origin_iata TEXT,
-  origin_name TEXT,
-  origin_lat DOUBLE PRECISION,
-  origin_lon DOUBLE PRECISION,
-  dest_icao TEXT,
-  dest_iata TEXT,
-  dest_name TEXT,
-  dest_lat DOUBLE PRECISION,
-  dest_lon DOUBLE PRECISION,
-  airline_name TEXT,
-  found BOOLEAN NOT NULL,
-  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Cached AeroDataBox FIDS board entries, keyed by callsign (see docs/SPEC.md

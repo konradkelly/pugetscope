@@ -1,18 +1,28 @@
 import type { StateVector } from "../openskyClient.js";
-import type { Airport, FlightRoute } from "./adsbdbClient.js";
-import { getFreshRoutes } from "../db/flightRoutes.js";
-import { enqueueLookup } from "./routeLookupWorker.js";
 import { getRegionalAirport, inferFlightPhase, type FlightPhase } from "./regionalAirports.js";
 import { findFidsMatches, type FidsMatch } from "../db/fidsFlights.js";
 
-// "typical" = adsbdb's crowd-sourced route, unverified against this specific
-// flight. "inferred" = we directly observed this aircraft landing at /
-// departing from a regional airport (own-track inference — tier 2 of
-// docs/SPEC.md §12); only the in-region endpoint is known this way, the
-// other stays null unless corroborated separately. "live" = a real FIDS
+export interface Airport {
+  icao: string | null;
+  iata: string | null;
+  name: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+export interface FlightRoute {
+  origin: Airport | null;
+  destination: Airport | null;
+  airline: string | null;
+}
+
+// "inferred" = we directly observed this aircraft landing at / departing
+// from a regional airport (own-track inference — tier 2 of docs/SPEC.md
+// §12, the final fallback); only the in-region endpoint is known this way,
+// the other stays null unless corroborated separately. "live" = a real FIDS
 // board match (tier 1) — authoritative origin/destination, and for an
 // arrival, a real estimated/actual arrival time (eta).
-export type RouteConfidence = "live" | "inferred" | "typical";
+export type RouteConfidence = "live" | "inferred";
 export type EnrichedRoute = FlightRoute & {
   confidence: RouteConfidence;
   eta?: string; // ISO UTC — only populated by a "live" arrival match
@@ -77,38 +87,17 @@ function buildInferredRoute(phase: NonNullable<FlightPhase>): EnrichedRoute {
 }
 
 /**
- * A cached route is "contradicted" when we can directly observe (via
- * inferFlightPhase) that this aircraft is landing at or departing from a
- * regional airport other than what the route claims. E.g. adsbdb says
- * PDX->JFK but the aircraft is visibly descending into SEA right now — the
- * cached route describes what this callsign *usually* flies, not this leg.
- */
-function isContradicted(phase: NonNullable<FlightPhase>, route: FlightRoute): boolean {
-  const claimedIcao =
-    phase.kind === "landing" ? route.destination?.icao : route.origin?.icao;
-  if (!claimedIcao) return false; // route doesn't even claim an airport here
-  return claimedIcao.toUpperCase() !== phase.airportIcao;
-}
-
-/**
  * Attaches route info to each state, resolving tiers highest-confidence
  * first (docs/SPEC.md §12):
- *  1. FIDS board match (real schedule data) -> "live", used as-is.
- *  2. Otherwise, adsbdb cache: a hit not contradicted by direct observation
- *     -> "typical"; missing/stale/contradicted -> fall through.
- *  3. Own-track inference (landing/departing near a regional airport) ->
- *     "inferred" partial route as the final fallback when 1-2 don't apply.
- * The external adsbdb API is never called from this path — misses/stale
- * entries just get enqueued for a background lookup.
+ *  1. FIDS board match (real schedule data, all 5 regional airports) -> "live", used as-is.
+ *  2. Own-track inference (landing/departing near a regional airport) ->
+ *     "inferred" partial route as the final fallback when there's no FIDS match.
  */
 export async function attachRoutes(states: StateVector[]): Promise<EnrichedStateVector[]> {
   const callsigns = [
     ...new Set(states.map((s) => s.callsign).filter((c): c is string => !!c)),
   ];
-  const [cachedRoutes, fidsMatches] = await Promise.all([
-    getFreshRoutes(callsigns),
-    findFidsMatches(callsigns),
-  ]);
+  const fidsMatches = await findFidsMatches(callsigns);
 
   return states.map((s) => {
     const phase = inferFlightPhase(s);
@@ -119,17 +108,6 @@ export async function attachRoutes(states: StateVector[]): Promise<EnrichedState
     const fidsMatch = fidsMatches.get(s.callsign);
     if (fidsMatch) return { ...s, route: buildFidsRoute(fidsMatch, s.onGround) };
 
-    const hit = cachedRoutes.get(s.callsign);
-    if (!hit) {
-      enqueueLookup(s.callsign); // missing or stale — refresh in the background
-      return inferredFallback;
-    }
-
-    // found === false is a fresh negative-cache hit: known to have no route.
-    if (!hit.found || !hit.route) return inferredFallback;
-
-    if (phase && isContradicted(phase, hit.route)) return inferredFallback;
-
-    return { ...s, route: { ...hit.route, confidence: "typical" } };
+    return inferredFallback;
   });
 }
