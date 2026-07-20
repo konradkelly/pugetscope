@@ -39,9 +39,16 @@ for svc in ingestion websocket api frontend; do
   kubectl rollout restart "deployment/$svc" -n pugetscope
 done
 
-log "Waiting for pods to become ready"
-kubectl wait --namespace pugetscope --for=condition=ready pod \
-  --selector='app in (api,ingestion,websocket,frontend)' --timeout=180s
+log "Waiting for the rollout to finish"
+# kubectl rollout status watches the Deployment's own status, not individual
+# pod objects — kubectl wait --selector=... raced with the rolling update
+# here: it lists matching pods once, then waits on each, and an old pod
+# terminating between that list and the wait made it exit 1 on a NotFound
+# even though the new pods were already healthy (bit both a manual run and
+# the first real CI run of this script).
+for svc in ingestion websocket api frontend; do
+  kubectl rollout status "deployment/$svc" -n pugetscope --timeout=180s
+done
 
 log "Pods:"
 kubectl get pods -n pugetscope
