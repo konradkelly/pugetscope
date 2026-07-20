@@ -16,7 +16,7 @@ export default function App() {
 
   return (
     <div className="relative h-screen w-screen">
-      <AircraftMap aircraft={aircraft} onSelect={setSelectedIcao24} />
+      <AircraftMap aircraft={aircraft} selectedIcao24={selectedIcao24} onSelect={setSelectedIcao24} />
 
       <AuthPanel user={user} onAuthChange={setUser} />
 

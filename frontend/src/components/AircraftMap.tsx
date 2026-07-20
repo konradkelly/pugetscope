@@ -20,15 +20,21 @@ const OSM_STYLE: maplibregl.StyleSpecification = {
 
 interface Props {
   aircraft: AircraftByIcao;
+  selectedIcao24: string | null;
   onSelect: (icao24: string) => void;
 }
+
+const TRAIL_SOURCE_ID = "flight-path";
+const TRAIL_MAX_POINTS = 300;
+const MARKER_COLOR = "text-sky-600";
+const SELECTED_MARKER_COLOR = "text-violet-600";
 
 // Placeholder icon — pending tar1090 icon-set license check (docs/SPEC.md
 // §10 open questions). Swap the innerHTML below once that's resolved.
 function createMarkerElement(): HTMLDivElement {
   const el = document.createElement("div");
   el.innerHTML = `
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="text-sky-600 drop-shadow">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="${MARKER_COLOR} drop-shadow">
       <path d="M12 2 L15 14 L22 17 L22 19 L15 17.5 L14 22 L17 23 L17 24 L12 22.5 L7 24 L7 23 L10 22 L9 17.5 L2 19 L2 17 L9 14 Z" />
     </svg>
   `;
@@ -36,10 +42,18 @@ function createMarkerElement(): HTMLDivElement {
   return el;
 }
 
-export function AircraftMap({ aircraft, onSelect }: Props) {
+function emptyLineCollection(): GeoJSON.FeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+export function AircraftMap({ aircraft, selectedIcao24, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  // Positions observed client-side since each aircraft was first seen — the
+  // feed only carries current state, so there's no server-side history to
+  // draw the trail from.
+  const trailsRef = useRef<Map<string, [number, number][]>>(new Map());
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -50,6 +64,18 @@ export function AircraftMap({ aircraft, onSelect }: Props) {
       zoom: PUGET_SOUND_DEFAULT_ZOOM,
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    map.on("load", () => {
+      map.addSource(TRAIL_SOURCE_ID, { type: "geojson", data: emptyLineCollection() });
+      map.addLayer({
+        id: TRAIL_SOURCE_ID,
+        type: "line",
+        source: TRAIL_SOURCE_ID,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#7c3aed", "line-width": 2, "line-opacity": 0.7 },
+      });
+    });
+
     mapRef.current = map;
 
     return () => {
@@ -63,6 +89,7 @@ export function AircraftMap({ aircraft, onSelect }: Props) {
     if (!map) return;
 
     const markers = markersRef.current;
+    const trails = trailsRef.current;
     const seen = new Set<string>();
 
     for (const [icao24, state] of aircraft) {
@@ -85,6 +112,18 @@ export function AircraftMap({ aircraft, onSelect }: Props) {
 
       marker.setLngLat([state.longitude, state.latitude]);
       marker.setRotation(state.trueTrack ?? 0);
+
+      const svg = marker.getElement().querySelector("svg");
+      svg?.classList.toggle(SELECTED_MARKER_COLOR, icao24 === selectedIcao24);
+      svg?.classList.toggle(MARKER_COLOR, icao24 !== selectedIcao24);
+
+      const trail = trails.get(icao24) ?? [];
+      const last = trail[trail.length - 1];
+      if (!last || last[0] !== state.longitude || last[1] !== state.latitude) {
+        trail.push([state.longitude, state.latitude]);
+        if (trail.length > TRAIL_MAX_POINTS) trail.shift();
+      }
+      trails.set(icao24, trail);
     }
 
     // remove markers for aircraft no longer in the current snapshot/update
@@ -94,7 +133,27 @@ export function AircraftMap({ aircraft, onSelect }: Props) {
         markers.delete(icao24);
       }
     }
-  }, [aircraft, onSelect]);
+
+    // drop trails for aircraft that are gone and not the current selection
+    for (const icao24 of trails.keys()) {
+      if (!seen.has(icao24) && icao24 !== selectedIcao24) trails.delete(icao24);
+    }
+
+    const trailSource = map.getSource(TRAIL_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (trailSource) {
+      const selectedTrail = selectedIcao24 ? trails.get(selectedIcao24) : undefined;
+      trailSource.setData(
+        selectedTrail && selectedTrail.length > 1
+          ? {
+              type: "FeatureCollection",
+              features: [
+                { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: selectedTrail } },
+              ],
+            }
+          : emptyLineCollection(),
+      );
+    }
+  }, [aircraft, selectedIcao24, onSelect]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
