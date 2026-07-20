@@ -1,5 +1,6 @@
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
+data "aws_region" "current" {}
 
 # ---------------------------------------------------------------------------
 # EC2 instance role: attached to every K8s node. Grants ECR pull (image
@@ -158,5 +159,39 @@ data "aws_iam_policy_document" "github_actions" {
     effect    = "Allow"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
     resources = [var.state_bucket_arn, "${var.state_bucket_arn}/*"]
+  }
+
+  # Lets CI open the same SSM port-forward tunnel to the K8s control-plane
+  # node that a human currently opens by hand (k8s/README.md "EC2 cluster")
+  # — the API server has no public endpoint by design (admin_cidrs is
+  # empty), so this is the only way to reach kubectl from a GitHub-hosted
+  # runner. Scoped to instance/document/session resource *types* in this
+  # account/region (matching the resource-scoping style of the other
+  # statements here) rather than a specific instance ARN, so it keeps
+  # working across a node replacement without a Terraform edit. Deliberately
+  # no tag condition: ssm:StartSession's authorization context spans two
+  # different resource ARNs (target instance + document) in one call, and a
+  # tag condition that only the instance ARN satisfies would evaluate false
+  # for the document leg and break the action entirely.
+  statement {
+    sid    = "SsmTunnelForDeploy"
+    effect = "Allow"
+    actions = [
+      "ssm:StartSession",
+      "ssm:TerminateSession",
+      "ssm:ResumeSession",
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/*",
+      "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/AWS-StartPortForwardingSession",
+      "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:session/*",
+    ]
+  }
+
+  statement {
+    sid       = "SsmSessionVisibility"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeSessions", "ssm:GetConnectionStatus"]
+    resources = ["*"]
   }
 }

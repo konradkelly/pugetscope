@@ -1,0 +1,114 @@
+name: Deploy to EC2 prod
+
+# Builds+pushes the 4 app images to ECR and redeploys the EC2 kubeadm
+# cluster (k8s/README.md "EC2 cluster"), mirroring what a human currently
+# does by hand: open an SSM port-forward tunnel to the control-plane node,
+# then run k8s/up-ec2.sh. Terraform/infra changes are deliberately NOT part
+# of this workflow — see terraform/README.md and the EC2 drift note in
+# docs/SPEC.md; infra stays a manual, deliberate `terraform plan`-checked
+# step, never something CI applies unattended.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "ingestion/**"
+      - "websocket/**"
+      - "frontend/**"
+      - "k8s/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Install session-manager-plugin
+        run: |
+          curl -sSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+          rm /tmp/session-manager-plugin.deb
+          session-manager-plugin --version
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.5"
+          terraform_wrapper: false
+
+      - name: Resolve control-plane instance ID
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          terraform init -input=false
+          CP_NAME="$(terraform output -json k8s_control_plane_names | jq -r '.[0]')"
+          CP_ID="$(terraform output -json k8s_node_instance_ids | jq -r --arg n "$CP_NAME" '.[$n]')"
+          if [ -z "$CP_ID" ] || [ "$CP_ID" = "null" ]; then
+            echo "Could not resolve control-plane instance ID from terraform output" >&2
+            exit 1
+          fi
+          echo "CP_INSTANCE_ID=$CP_ID" >> "$GITHUB_ENV"
+
+      - name: Write EC2 kubeconfig
+        run: |
+          umask 077
+          echo "${{ secrets.EC2_KUBECONFIG_B64 }}" | base64 -d > k8s/ec2-kubeconfig
+
+      - name: Open SSM port-forward tunnel to control-plane
+        run: |
+          set -euo pipefail
+          nohup aws ssm start-session \
+            --region us-west-2 \
+            --target "$CP_INSTANCE_ID" \
+            --document-name AWS-StartPortForwardingSession \
+            --parameters '{"portNumber":["6443"],"localPortNumber":["6443"]}' \
+            > ssm-tunnel.log 2>&1 &
+          echo "SSM_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/6443) 2>/dev/null; then
+              exec 3<&- 3>&-
+              echo "Tunnel is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Tunnel did not come up in time" >&2
+          cat ssm-tunnel.log >&2
+          exit 1
+
+      - name: Write k8s/secrets.env
+        run: |
+          umask 077
+          cat > k8s/secrets.env <<EOF
+          OPENSKY_CLIENT_ID=${{ secrets.OPENSKY_CLIENT_ID }}
+          OPENSKY_CLIENT_SECRET=${{ secrets.OPENSKY_CLIENT_SECRET }}
+          OPENSKY_PROXY_URL=${{ secrets.OPENSKY_PROXY_URL }}
+          AERODATABOX_API_KEY=${{ secrets.AERODATABOX_API_KEY }}
+          UMAMI_APP_SECRET=${{ secrets.UMAMI_APP_SECRET }}
+          UMAMI_DB_PASSWORD=${{ secrets.UMAMI_DB_PASSWORD }}
+          EOF
+
+      - name: Deploy (build, push, apply)
+        run: bash k8s/up-ec2.sh
+
+      - name: Clean up tunnel + local credentials
+        if: always()
+        run: |
+          [ -n "${SSM_TUNNEL_PID:-}" ] && kill "$SSM_TUNNEL_PID" 2>/dev/null || true
+          rm -f k8s/ec2-kubeconfig k8s/secrets.env ssm-tunnel.log
