@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import type { FeatureCollection } from "geojson";
 import { PUGET_SOUND_CENTER, PUGET_SOUND_DEFAULT_ZOOM } from "../lib/config.js";
 import type { AircraftByIcao } from "../lib/useAircraftFeed.js";
 
@@ -42,7 +43,7 @@ function createMarkerElement(): HTMLDivElement {
   return el;
 }
 
-function emptyLineCollection(): GeoJSON.FeatureCollection {
+function emptyLineCollection(): FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
