@@ -1,9 +1,11 @@
 import { fetch, ProxyAgent, type Dispatcher } from "undici";
 import { config } from "./config.js";
 
-// Shared across both OpenSky calls (token + states) — undefined dispatcher
-// falls back to undici's default (direct connection).
-const proxyAgent: Dispatcher | undefined = config.opensky.proxyUrl
+// Shared across every OpenSky call (token, states, and the aircraft database
+// download in loadAircraftDatabase.ts) — undefined dispatcher falls back to
+// undici's default (direct connection). OpenSky blocks AWS-origin traffic, so
+// anything hitting opensky-network.org from this deployment needs this.
+export const proxyAgent: Dispatcher | undefined = config.opensky.proxyUrl
   ? new ProxyAgent(config.opensky.proxyUrl)
   : undefined;
 

@@ -1,6 +1,8 @@
 import { Readable } from "node:stream";
 import { parse } from "csv-parse";
+import { fetch } from "undici";
 import { pool } from "../db/postgres.js";
+import { proxyAgent } from "../openskyClient.js";
 
 // Official OpenSky aircraft metadata CSV — see docs/SPEC.md §7. Redirects to
 // an S3-hosted file; the database as a whole aggregates FAA + other national
@@ -16,6 +18,7 @@ interface AircraftDatabaseRow {
   model: string;
   typecode: string;
   operator: string;
+  operatorcallsign: string;
 }
 
 async function getTrackedIcao24s(): Promise<Set<string>> {
@@ -40,7 +43,7 @@ export async function runEnrichment(): Promise<void> {
     return;
   }
 
-  const res = await fetch(AIRCRAFT_DATABASE_URL);
+  const res = await fetch(AIRCRAFT_DATABASE_URL, { dispatcher: proxyAgent });
   if (!res.ok || !res.body) {
     throw new Error(`failed to download aircraft database: ${res.status}`);
   }
@@ -68,7 +71,11 @@ export async function runEnrichment(): Promise<void> {
         row.manufacturername?.trim() || row.manufacturericao?.trim() || null,
         row.model?.trim() || null,
         row.typecode?.trim() || null,
-        row.operator?.trim() || null,
+        // The CSV's `operator` column is inconsistently filled even for major
+        // carriers (e.g. Skywest/Southwest rows leave it blank) — fall back to
+        // `operatorcallsign` rather than `owner`, which is often a leasing/
+        // finance entity, not who actually operates the aircraft.
+        row.operator?.trim() || row.operatorcallsign?.trim() || null,
       ],
     );
   }
