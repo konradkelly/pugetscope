@@ -87,3 +87,16 @@ data:
       airport_icao TEXT PRIMARY KEY,
       last_fetched_at TIMESTAMPTZ NOT NULL
     );
+
+    -- Zip code (ZCTA) boundary polygons, batch-loaded once from Census
+    -- TIGERweb (ingestion/src/loadZips.ts, npm run load-zips) — a static
+    -- reference dataset, not something that changes poll-to-poll. Backs
+    -- noise/overflight-by-neighborhood analytics: a spatial join against
+    -- `positions` answers "what flew over this zip, and when."
+    CREATE TABLE IF NOT EXISTS zip_boundaries (
+      zcta5 TEXT PRIMARY KEY,
+      boundary GEOGRAPHY(MULTIPOLYGON, 4326) NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS zip_boundaries_boundary_gist_idx
+      ON zip_boundaries USING GIST (boundary);

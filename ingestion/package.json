@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "enrich": "tsx src/enrich.ts",
+    "load-zips": "tsx src/loadZips.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

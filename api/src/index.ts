@@ -5,6 +5,7 @@ import cors from "@fastify/cors";
 import { config } from "./config.js";
 import { authRoutes } from "./routes/auth.js";
 import { aircraftRoutes } from "./routes/aircraft.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
@@ -14,6 +15,7 @@ async function main(): Promise<void> {
 
   await app.register(authRoutes);
   await app.register(aircraftRoutes);
+  await app.register(analyticsRoutes);
 
   app.get("/healthz", async () => ({ ok: true }));
 

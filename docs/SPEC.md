@@ -21,10 +21,15 @@ Target audience: public multi-user web app — real accounts, not just a persona
 
 ### Explicitly out of scope for v1 (candidates for v2+)
 - **Flight routing enrichment** (origin/destination + self-computed ETA per aircraft) — fully designed, see §12. First v2 feature to build.
-- Airport departures/arrivals dashboard (needs a schedule data source, separate integration)
-- Flight playback/replay
-- Noise heatmap
+- Airport departures/arrivals dashboard (needs a schedule data source, separate integration) — partially unblocked already: FIDS (§12) already pulls this data for route-matching, just not surfaced as its own public-facing view.
+- Flight playback/replay — the `positions` table has been accumulating full history (position/altitude/speed/heading per aircraft per poll) since ingestion went live; this is a query/UI problem against data already collected, not a new integration.
+- Noise/overflight analytics by neighborhood — buckets overflights by neighborhood/zip polygon × time-of-day × altitude, using data already in `positions`. No new data source needed. First v2+ feature after routing; see §13.
+- Traffic volume analytics — flights/hour, busiest times of day, day-of-week patterns, split by airport (KSEA vs. the 4 regional fields). Same `positions` table, aggregate rather than per-neighborhood.
+- Runway/flow-direction inference — which configuration SEA is using right now, inferred from approach/departure headings already in `positions`. Feeds both the noise-analytics angle and general spotter interest.
+- Aircraft/airline mix stats — busiest operator this week, rarest type spotted; leaderboard-flavored, builds on the reference-data enrichment already built (registration/manufacturer/model/operator, `ingestion/src/enrichment/`).
 - Boeing Spotter Mode / rare-aircraft notifications
+- Personal spotting log (auth-gated) — auto-confirmed against real ADS-B data rather than self-reported. The actual payoff for having real accounts (§6), which currently authenticate users into nothing.
+- Saved watchlist + custom alert zones (auth-gated) — "notify me when N123AB is back in the area" / "notify me when something's over my house."
 - Ferry/maritime integration
 - Terrain/weather overlays
 - AI features (NL search, delay prediction, daily summaries)
@@ -224,3 +229,16 @@ adsbdb is open-source (MIT) with a free public API; hexdb similarly free. Both a
 **Confidence field (✅ built).** `route.confidence` (`"live" | "inferred"`) flows from `ingestion` through the Redis blob to the API/WebSocket and is rendered as a confidence-keyed disclaimer in the frontend detail panel, with `route.eta` (only present on a `"live"` arrival match) rendered as a countdown when available. This is the honest, portfolio-worthy framing: multi-source enrichment with explicit, surfaced confidence rather than a single unreliable lookup presented as fact.
 
 **Remaining gap:** the haversine self-computed ETA (above) is still unbuilt, so `"inferred"` routes have no ETA at all yet — only `"live"` FIDS matches do.
+
+## 13. Noise/Overflight Analytics by Neighborhood (v2 — partially built)
+
+Goal: answer "what flew over this specific zip code, how low, how often, and when" — a materially better tool for the actual question Puget Sound residents have than a generic flight tracker offers, and distinctly tied to a real, long-running local issue (SeaTac noise impact on Burien/Des Moines/SeaTac/Tukwila and Seattle's Beacon Hill/Georgetown/South Park). See conversation history for the fuller civic-context rationale. Deliberately **zip-code (ZCTA) granularity**, not hand-drawn neighborhood polygons — covers both Seattle proper and the surrounding cities under SEA's flight paths from one public, keyless dataset, rather than merging two boundary sources.
+
+**Build status:**
+- ✅ **Zip boundary reference data** — built (`ingestion/src/enrichment/loadZipBoundaries.ts`, run via `npm run load-zips`). One-time (re-runnable) load from **Census TIGERweb** (`Census2020/PUMA_TAD_TAZ_UGA_ZCTA` ArcGIS REST service, layer 2 = "ZIP Code Tabulation Areas") — free, no API key, and supports a server-side envelope filter so this only pulls ZCTAs intersecting the project bbox (§3) instead of downloading the full national dataset. `zip_boundaries(zcta5 PK, boundary GEOGRAPHY(MULTIPOLYGON, 4326))`, GiST-indexed. Verified live: 217 ZCTAs loaded against production, confirmed covering all the noise-relevant zips (98108, 98146, 98158, 98168, 98188, 98198).
+- ✅ **Overflight aggregation queries** — built (`api/src/routes/analytics.ts`), not yet deployed to the running `api` service. A spatial join (`ST_Intersects`) between `positions` and a zip's `boundary`, using the existing GiST index on `positions.position` — no new ingestion-side work, since `positions` has been accumulating full (lat/lon/altitude/heading/timestamp) history since ingestion went live regardless of this feature. Two endpoints:
+  - `GET /analytics/overflights/summary?zip=&days=` — hour-of-day histogram (Pacific time). "Overflights" = distinct `(icao24, calendar day)` pairs per hour bucket, summed over the lookback window, to avoid the ~30s poll cadence inflating the count with dozens of rows per actual pass. Returns count + avg/min altitude per hour.
+  - `GET /analytics/overflights/events?zip=&from=&to=` — for a narrow (≤24h) window, one row per aircraft (its lowest-altitude point in the window, i.e. closest approach), joined against `aircraft` for registration/manufacturer/model/operator. This is the "what was that loud plane at 6:47pm" lookup.
+- ✅ **Verified against real production data**, not just mocked: spatial join results line up with known local geography — 98188 (SeaTac, adjacent to the runways) shows 100–330 overflights/hour at 46–1200m; 98108 (Beacon Hill, directly under SEA's north-flow corridor) is the busiest zip observed, with altitudes dipping slightly negative during several hours (WGS84 ellipsoidal height near sea level in a region where the geoid dips below the ellipsoid — expected near-runway-threshold behavior, not a bug); 98146 (Burien) shows far fewer intersecting positions, mostly cruise-altitude traffic, under the runway configuration active during the sample window.
+- ⬜ **Not yet shipped to production** — the schema (`zip_boundaries` table + index) and loaded zip data are live in production Postgres, but the new `api` routes only exist in this checkout; deploying them means a real image build/push/rollout (`k8s/push-ecr.sh` + `kubectl rollout restart`, or via the GitHub Actions `deploy.yml` on push to `main`), deliberately not done without a separate go-ahead.
+- ⬜ **No frontend yet** — backend/API scope only for this pass, by design (see conversation history for the scoping decision). A neighborhood-picker + hour-of-day chart is the natural next step once the API is live.
