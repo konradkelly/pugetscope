@@ -28,6 +28,14 @@ const DAY_OPTIONS = [7, 14, 30, 60, 90];
 const EVENTS_WINDOW_HOURS = 3;
 const HOUR_TICKS = [0, 3, 6, 9, 12, 15, 18, 21];
 
+// Module-level (not per-mount) so re-selecting a zip you've already looked at
+// — including after closing and reopening the panel — is free: the summary
+// is a slow-changing aggregate (recomputed as ~30s-cadence polls land), so
+// there's no reason to re-run the spatial join for a (zip, days) pair we
+// already have. The events lookup isn't cached: its window always ends at
+// "now", so a cached copy would go stale within minutes.
+const summaryCache = new Map<string, OverflightHour[]>();
+
 function niceMax(value: number): number {
   if (value <= 0) return 1;
   const magnitude = 10 ** Math.floor(Math.log10(value));
@@ -59,12 +67,21 @@ export function NeighborhoodAnalyticsPanel({ onClose }: Props) {
   const [hoveredHour, setHoveredHour] = useState<number | null>(null);
 
   useEffect(() => {
+    const cacheKey = `${zip}:${days}`;
+    const cached = summaryCache.get(cacheKey);
+    if (cached) {
+      setHours(cached);
+      setSummaryError(null);
+      return;
+    }
+
     let cancelled = false;
     setHours(null);
     setSummaryError(null);
     api
       .getOverflightSummary(zip, days)
       .then((data) => {
+        summaryCache.set(cacheKey, data.hours);
         if (!cancelled) setHours(data.hours);
       })
       .catch((err) => {
