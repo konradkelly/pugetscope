@@ -74,7 +74,8 @@ module "ec2" {
 module "route53" {
   source = "./modules/route53"
 
-  project     = var.project
-  domain_name = var.domain_name
-  ingress_ip  = module.ec2.ingress_public_ip
+  project                  = var.project
+  domain_name              = var.domain_name
+  ingress_ip               = module.ec2.ingress_public_ip
+  google_site_verification = "Ul7RkU4cZu2EfQWZy1OuoK6JzTEkL1YSluc96"
 }

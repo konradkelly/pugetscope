@@ -28,3 +28,13 @@ resource "aws_route53_record" "analytics" {
   ttl     = 300
   records = [var.ingress_ip]
 }
+
+# Search Console domain-ownership proof (Settings > Ownership verification > DNS record).
+resource "aws_route53_record" "google_site_verification" {
+  count   = var.google_site_verification != null ? 1 : 0
+  zone_id = aws_route53_zone.main.zone_id
+  name    = var.domain_name
+  type    = "TXT"
+  ttl     = 300
+  records = ["google-site-verification=${var.google_site_verification}"]
+}
