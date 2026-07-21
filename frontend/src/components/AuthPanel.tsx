@@ -15,7 +15,7 @@ export function AuthPanel({ user, onAuthChange }: Props) {
 
   if (user) {
     return (
-      <div className="absolute left-4 top-4 flex items-center gap-3 rounded-lg bg-white/95 px-4 py-2 text-sm shadow-lg backdrop-blur">
+      <div className="flex items-center gap-3 rounded-lg bg-white/95 px-4 py-2 text-sm shadow-lg backdrop-blur">
         <span>{user.email}</span>
         <button
           className="text-sky-700 hover:underline"
@@ -49,7 +49,7 @@ export function AuthPanel({ user, onAuthChange }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="absolute left-4 top-4 w-64 rounded-lg bg-white/95 p-4 text-sm shadow-lg backdrop-blur"
+      className="w-64 rounded-lg bg-white/95 p-4 text-sm shadow-lg backdrop-blur"
     >
       <div className="mb-2 flex gap-3">
         <button

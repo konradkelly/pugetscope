@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
-import { api, type AircraftDetail } from "../lib/api.js";
+import { api, type AircraftDetail, type CurrentUser, type SpottingResult } from "../lib/api.js";
 import type { Airport, RouteConfidence, StateVector } from "../lib/useAircraftFeed.js";
 
 interface Props {
   icao24: string;
   live: StateVector | undefined;
+  user: CurrentUser | null;
   onClose: () => void;
 }
+
+type LogState =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { status: "done"; result: SpottingResult }
+  | { status: "error"; message: string };
 
 function airportCode(a: Airport | null | undefined): string {
   // "—" for a genuinely unknown endpoint (e.g. an "inferred" partial route
@@ -33,14 +40,16 @@ function formatEta(iso: string): string {
   return `${clock} (~${hours}h ${mins}m)`;
 }
 
-export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
+export function AircraftDetailPanel({ icao24, live, user, onClose }: Props) {
   const [detail, setDetail] = useState<AircraftDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [logState, setLogState] = useState<LogState>({ status: "idle" });
 
   useEffect(() => {
     let cancelled = false;
     setDetail(null);
     setError(null);
+    setLogState({ status: "idle" });
     api
       .getAircraftDetail(icao24)
       .then((data) => {
@@ -53,6 +62,19 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
       cancelled = true;
     };
   }, [icao24]);
+
+  async function handleLogSighting() {
+    setLogState({ status: "pending" });
+    try {
+      const result = await api.logSpotting(icao24);
+      setLogState({ status: "done", result });
+    } catch (err) {
+      setLogState({
+        status: "error",
+        message: err instanceof Error ? err.message : "something went wrong",
+      });
+    }
+  }
 
   const route = live?.route;
 
@@ -127,6 +149,34 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
           {live?.verticalRate != null ? `${live.verticalRate.toFixed(1)} m/s` : "—"}
         </dd>
       </dl>
+
+      {user && (
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <button
+            onClick={handleLogSighting}
+            disabled={logState.status === "pending" || logState.status === "done"}
+            className="w-full rounded bg-sky-600 py-1 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            {logState.status === "done"
+              ? "✓ Logged"
+              : logState.status === "pending"
+                ? "Logging…"
+                : "📋 Log this sighting"}
+          </button>
+          {logState.status === "done" && (
+            <p className="mt-1 text-center text-xs text-gray-500">
+              {logState.result.isFirstSighting
+                ? "First time logging this one!"
+                : logState.result.duplicate
+                  ? "Already logged within the last hour"
+                  : "Added to your spotting log"}
+            </p>
+          )}
+          {logState.status === "error" && (
+            <p className="mt-1 text-center text-xs text-red-600">{logState.message}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

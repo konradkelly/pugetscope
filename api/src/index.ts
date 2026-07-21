@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { authRoutes } from "./routes/auth.js";
 import { aircraftRoutes } from "./routes/aircraft.js";
 import { analyticsRoutes } from "./routes/analytics.js";
+import { spottingsRoutes } from "./routes/spottings.js";
 
 async function main(): Promise<void> {
   // trustProxy: requests arrive via the nginx Ingress (k8s/base/ingress.yaml),
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
   await app.register(authRoutes);
   await app.register(aircraftRoutes);
   await app.register(analyticsRoutes);
+  await app.register(spottingsRoutes);
 
   app.get("/healthz", async () => ({ ok: true }));
 

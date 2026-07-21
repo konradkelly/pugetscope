@@ -50,6 +50,31 @@ export interface OverflightEvents {
   events: OverflightEvent[];
 }
 
+export interface SpottingResult {
+  id: number;
+  icao24: string;
+  spottedAt: string;
+  duplicate: boolean;
+  isFirstSighting: boolean;
+}
+
+export interface SpottingLogEntry {
+  icao24: string;
+  timesSpotted: number;
+  firstSpottedAt: string;
+  lastSpottedAt: string;
+  registration: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  operator: string | null;
+}
+
+export interface SpottingLog {
+  entries: SpottingLogEntry[];
+  uniqueAircraft: number;
+  totalSightings: number;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${config.apiUrl}${path}`, {
     ...init,
@@ -93,4 +118,12 @@ export const api = {
     }),
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+
+  logSpotting: (icao24: string) =>
+    request<SpottingResult>("/spottings", {
+      method: "POST",
+      body: JSON.stringify({ icao24 }),
+    }),
+
+  getSpottings: () => request<SpottingLog>("/spottings"),
 };

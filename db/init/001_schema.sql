@@ -93,3 +93,25 @@ CREATE TABLE IF NOT EXISTS zip_boundaries (
 
 CREATE INDEX IF NOT EXISTS zip_boundaries_boundary_gist_idx
   ON zip_boundaries USING GIST (boundary);
+
+-- Personal spotting log (auth-gated) — the payoff for accounts existing.
+-- Each row is a user "logging" a sighting, auto-confirmed server-side
+-- against a recent `positions` row (api/src/routes/spottings.ts) rather
+-- than trusting a bare client claim, so the log reads as a real logbook
+-- instead of a self-reported list.
+CREATE TABLE IF NOT EXISTS spottings (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id),
+  icao24 TEXT NOT NULL REFERENCES aircraft(icao24),
+  spotted_at TIMESTAMPTZ NOT NULL,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  altitude DOUBLE PRECISION,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS spottings_user_id_spotted_at_idx
+  ON spottings (user_id, spotted_at DESC);
+
+CREATE INDEX IF NOT EXISTS spottings_user_id_icao24_idx
+  ON spottings (user_id, icao24);

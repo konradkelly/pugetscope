@@ -3,6 +3,7 @@ import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AuthPanel } from "./components/AuthPanel.js";
 import { NeighborhoodAnalyticsPanel } from "./components/NeighborhoodAnalyticsPanel.js";
+import { SpottingLogPanel } from "./components/SpottingLogPanel.js";
 import { useAircraftFeed } from "./lib/useAircraftFeed.js";
 import { api, type CurrentUser } from "./lib/api.js";
 
@@ -11,6 +12,7 @@ export default function App() {
   const [selectedIcao24, setSelectedIcao24] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [showNoisePanel, setShowNoisePanel] = useState(false);
+  const [showSpottingLog, setShowSpottingLog] = useState(false);
 
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null));
@@ -20,12 +22,31 @@ export default function App() {
     <div className="relative h-screen w-screen">
       <AircraftMap aircraft={aircraft} selectedIcao24={selectedIcao24} onSelect={setSelectedIcao24} />
 
-      <AuthPanel user={user} onAuthChange={setUser} />
+      {/* Stacked in normal flow (not each independently `absolute`-positioned)
+          so the spotting-log toggle never overlaps AuthPanel regardless of
+          whether it's rendering the short logged-in chip or the taller
+          login/signup form. */}
+      <div className="absolute left-4 top-4 flex flex-col items-start gap-2">
+        <AuthPanel user={user} onAuthChange={setUser} />
+
+        {user &&
+          (showSpottingLog ? (
+            <SpottingLogPanel onClose={() => setShowSpottingLog(false)} />
+          ) : (
+            <button
+              onClick={() => setShowSpottingLog(true)}
+              className="rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+            >
+              📋 My spotting log
+            </button>
+          ))}
+      </div>
 
       {selectedIcao24 && (
         <AircraftDetailPanel
           icao24={selectedIcao24}
           live={aircraft.get(selectedIcao24)}
+          user={user}
           onClose={() => setSelectedIcao24(null)}
         />
       )}
