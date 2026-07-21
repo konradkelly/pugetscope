@@ -38,12 +38,20 @@ export function AircraftDetailPanel({ icao24, live, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setDetail(null);
     setError(null);
     api
       .getAircraftDetail(icao24)
-      .then(setDetail)
-      .catch((err) => setError(err.message));
+      .then((data) => {
+        if (!cancelled) setDetail(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [icao24]);
 
   const route = live?.route;
