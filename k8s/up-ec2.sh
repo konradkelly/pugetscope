@@ -28,6 +28,15 @@ bash k8s/push-ecr.sh
 log "Creating/updating secrets"
 bash k8s/create-secrets-ec2.sh
 
+log "Clearing any completed schema-init Job"
+# Jobs don't re-execute on `kubectl apply` once already Complete — the
+# postgres-init ConfigMap below can pick up new schema (it's a plain
+# resource, no hash suffix per generatorOptions in overlays/ec2), but an
+# already-completed Job with the same name is left untouched, so a schema
+# change since the last deploy would silently never reach RDS. Deleting it
+# first forces the apply below to create a fresh one that actually runs.
+kubectl delete job/schema-init -n pugetscope --ignore-not-found
+
 log "Deploying manifests"
 kubectl apply -k k8s/overlays/ec2
 
