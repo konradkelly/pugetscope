@@ -38,6 +38,9 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   // rows per actual flyover.
   app.get<{ Querystring: { zip?: string; days?: string } }>(
     "/analytics/overflights/summary",
+    // Tighter than the app-wide default (index.ts) — this is a spatial join
+    // (ST_Intersects) against the full positions history, not a lookup.
+    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const { zip, days } = request.query;
       if (!zip || !ZIP_RE.test(zip)) {
@@ -85,6 +88,7 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
   // approach), joined against the aircraft reference table.
   app.get<{ Querystring: { zip?: string; from?: string; to?: string } }>(
     "/analytics/overflights/events",
+    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const { zip, from, to } = request.query;
       if (!zip || !ZIP_RE.test(zip)) {
