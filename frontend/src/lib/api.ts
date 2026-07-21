@@ -17,6 +17,39 @@ export interface CurrentUser {
   email: string;
 }
 
+export interface OverflightHour {
+  hour: number;
+  overflights: number;
+  avgAltitude: number | null;
+  minAltitude: number | null;
+}
+
+export interface OverflightSummary {
+  zip: string;
+  lookbackDays: number;
+  hours: OverflightHour[];
+}
+
+export interface OverflightEvent {
+  icao24: string;
+  callsign: string | null;
+  altitude: number | null;
+  ground_speed: number | null;
+  heading: number | null;
+  recorded_at: string;
+  registration: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  operator: string | null;
+}
+
+export interface OverflightEvents {
+  zip: string;
+  from: string;
+  to: string;
+  events: OverflightEvent[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${config.apiUrl}${path}`, {
     ...init,
@@ -34,6 +67,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getAircraftDetail: (icao24: string) =>
     request<AircraftDetail>(`/aircraft/${icao24}`),
+
+  getOverflightSummary: (zip: string, days: number) =>
+    request<OverflightSummary>(
+      `/analytics/overflights/summary?zip=${zip}&days=${days}`,
+    ),
+
+  getOverflightEvents: (zip: string, from: string, to: string) =>
+    request<OverflightEvents>(
+      `/analytics/overflights/events?zip=${zip}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
 
   me: () => request<CurrentUser>("/auth/me"),
 
