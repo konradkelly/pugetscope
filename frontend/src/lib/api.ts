@@ -50,6 +50,36 @@ export interface OverflightEvents {
   events: OverflightEvent[];
 }
 
+export interface AirportTraffic {
+  icao: string;
+  iata: string;
+  name: string;
+  flights: number;
+}
+
+export interface AirportTrafficTotals {
+  lookbackDays: number;
+  airports: AirportTraffic[];
+}
+
+export interface TrafficHour {
+  hour: number;
+  flights: number;
+}
+
+export interface TrafficDayOfWeek {
+  dow: number;
+  flights: number;
+}
+
+export interface TrafficVolume {
+  airport: string;
+  lookbackDays: number;
+  totalFlights: number;
+  hourly: TrafficHour[];
+  dayOfWeek: TrafficDayOfWeek[];
+}
+
 export interface SpottingResult {
   id: number;
   icao24: string;
@@ -102,6 +132,12 @@ export const api = {
     request<OverflightEvents>(
       `/analytics/overflights/events?zip=${zip}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     ),
+
+  getAirportTrafficTotals: (days: number) =>
+    request<AirportTrafficTotals>(`/analytics/traffic/airports?days=${days}`),
+
+  getTrafficVolume: (airport: string, days: number) =>
+    request<TrafficVolume>(`/analytics/traffic/volume?airport=${airport}&days=${days}`),
 
   me: () => request<CurrentUser>("/auth/me"),
 
