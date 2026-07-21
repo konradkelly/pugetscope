@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   type AirportTraffic,
@@ -56,14 +56,26 @@ export function TrafficVolumePanel({ onClose }: Props) {
   const [hoveredHour, setHoveredHour] = useState<number | null>(null);
   const [hoveredDow, setHoveredDow] = useState<number | null>(null);
 
+  const totalsCache = useRef(new Map<number, AirportTraffic[]>());
+  const volumeCache = useRef(new Map<string, { hourly: TrafficHour[]; dayOfWeek: TrafficDayOfWeek[] }>());
+
   useEffect(() => {
+    const cached = totalsCache.current.get(days);
+    if (cached) {
+      setTotals(cached);
+      setTotalsError(null);
+      return;
+    }
+
     let cancelled = false;
     setTotals(null);
     setTotalsError(null);
     api
       .getAirportTrafficTotals(days)
       .then((data) => {
-        if (!cancelled) setTotals(data.airports);
+        if (cancelled) return;
+        totalsCache.current.set(days, data.airports);
+        setTotals(data.airports);
       })
       .catch((err) => {
         if (!cancelled) setTotalsError(err.message);
@@ -74,6 +86,15 @@ export function TrafficVolumePanel({ onClose }: Props) {
   }, [days]);
 
   useEffect(() => {
+    const key = `${airport}:${days}`;
+    const cached = volumeCache.current.get(key);
+    if (cached) {
+      setHourly(cached.hourly);
+      setDayOfWeek(cached.dayOfWeek);
+      setVolumeError(null);
+      return;
+    }
+
     let cancelled = false;
     setHourly(null);
     setDayOfWeek(null);
@@ -82,6 +103,7 @@ export function TrafficVolumePanel({ onClose }: Props) {
       .getTrafficVolume(airport, days)
       .then((data) => {
         if (cancelled) return;
+        volumeCache.current.set(key, { hourly: data.hourly, dayOfWeek: data.dayOfWeek });
         setHourly(data.hourly);
         setDayOfWeek(data.dayOfWeek);
       })
