@@ -44,6 +44,11 @@ CREATE INDEX IF NOT EXISTS positions_icao24_recorded_at_idx
 CREATE INDEX IF NOT EXISTS positions_position_gist_idx
   ON positions USING GIST (position);
 
+-- Region-wide traffic queries (analytics/traffic/region) filter on
+-- recorded_at alone, with no icao24 or spatial predicate to piggyback on.
+CREATE INDEX IF NOT EXISTS positions_recorded_at_idx
+  ON positions (recorded_at);
+
 CREATE TABLE IF NOT EXISTS user_preferences (
   user_id UUID NOT NULL REFERENCES users(id),
   key TEXT NOT NULL,

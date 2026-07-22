@@ -80,6 +80,18 @@ export interface TrafficVolume {
   dayOfWeek: TrafficDayOfWeek[];
 }
 
+export interface TrafficDay {
+  date: string;
+  flights: number;
+}
+
+export interface RegionTraffic {
+  lookbackDays: number;
+  totalFlights: number;
+  daily: TrafficDay[];
+  hourly: TrafficHour[];
+}
+
 export interface SpottingResult {
   id: number;
   icao24: string;
@@ -138,6 +150,9 @@ export const api = {
 
   getTrafficVolume: (airport: string, days: number) =>
     request<TrafficVolume>(`/analytics/traffic/volume?airport=${airport}&days=${days}`),
+
+  getRegionTraffic: (days: number) =>
+    request<RegionTraffic>(`/analytics/traffic/region?days=${days}`),
 
   me: () => request<CurrentUser>("/auth/me"),
 

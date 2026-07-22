@@ -41,6 +41,25 @@ interface DayOfWeekRow {
   flights: string;
 }
 
+interface DailyRow {
+  date: string;
+  flights: string;
+}
+
+// The last `days` calendar dates (YYYY-MM-DD, America/Los_Angeles), ascending,
+// ending today — for zero-filling the daily trend. Arithmetic stays in
+// UTC-anchored "date-only" space after the initial LA-timezone lookup so
+// stepping by day doesn't re-trigger DST conversion.
+function recentDates(days: number): string[] {
+  const todayLA = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+  const [y, m, d] = todayLA.split("-").map(Number);
+  const anchor = Date.UTC(y, m - 1, d);
+  return Array.from({ length: days }, (_, i) => {
+    const dt = new Date(anchor - (days - 1 - i) * 86_400_000);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+  });
+}
+
 export async function trafficRoutes(app: FastifyInstance): Promise<void> {
   // Per-airport totals for the lookback window — the "split by airport"
   // comparison (KSEA vs. the 4 regional fields). "Flights" = distinct
@@ -150,6 +169,71 @@ export async function trafficRoutes(app: FastifyInstance): Promise<void> {
         totalFlights,
         hourly,
         dayOfWeek,
+      });
+    },
+  );
+
+  // Region-wide totals — "what this app fully covers" as a whole, not
+  // per-airport. Unlike the routes above, no ST_DWithin/spatial filter: the
+  // ingestion bbox (see ingestion/src/config.ts) already scopes every row in
+  // `positions` to the Puget Sound coverage area, and the airport circles
+  // overlap so summing their per-airport totals would double-count aircraft
+  // near multiple fields.
+  app.get<{ Querystring: { days?: string } }>(
+    "/analytics/traffic/region",
+    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const lookbackDays = clampDays(request.query.days);
+
+      const [totalResult, dailyResult, hourlyResult] = await Promise.all([
+        pool.query<{ flights: string }>(
+          `SELECT COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
+           FROM positions p
+           WHERE p.recorded_at >= now() - ($1 || ' days')::interval`,
+          [lookbackDays],
+        ),
+        // Day is already fixed by the GROUP BY, so distinct icao24 alone is
+        // enough to dedupe the poll cadence here (unlike the total/hourly
+        // queries, which span multiple days and need the day concatenated
+        // into the dedup key).
+        pool.query<DailyRow>(
+          `SELECT to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS date,
+                  COUNT(DISTINCT p.icao24) AS flights
+           FROM positions p
+           WHERE p.recorded_at >= now() - ($1 || ' days')::interval
+           GROUP BY date`,
+          [lookbackDays],
+        ),
+        pool.query<HourRow>(
+          `SELECT
+             EXTRACT(HOUR FROM p.recorded_at AT TIME ZONE 'America/Los_Angeles')::int AS hour,
+             COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
+           FROM positions p
+           WHERE p.recorded_at >= now() - ($1 || ' days')::interval
+           GROUP BY hour`,
+          [lookbackDays],
+        ),
+      ]);
+
+      const byDate = new Map(dailyResult.rows.map((r) => [r.date, Number(r.flights)]));
+      const daily = recentDates(lookbackDays).map((date) => ({
+        date,
+        flights: byDate.get(date) ?? 0,
+      }));
+
+      const byHour = new Map(hourlyResult.rows.map((r) => [r.hour, Number(r.flights)]));
+      const hourly = Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        flights: byHour.get(hour) ?? 0,
+      }));
+
+      const totalFlights = Number(totalResult.rows[0]?.flights ?? 0);
+
+      return reply.send({
+        lookbackDays,
+        totalFlights,
+        daily,
+        hourly,
       });
     },
   );
