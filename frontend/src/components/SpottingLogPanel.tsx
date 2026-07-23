@@ -103,7 +103,7 @@ export function SpottingLogPanel({ onClose }: Props) {
           {entries.map((e) => {
             const isExpanded = expanded === e.icao24;
             return (
-              <li key={e.icao24} className="rounded bg-sky-50 px-2 py-1.5">
+              <li key={e.icao24} className="rounded bg-sky-50 px-2 py-1.5 transition-colors hover:bg-sky-100">
                 <button
                   className="w-full text-left"
                   onClick={() => setExpanded(isExpanded ? null : e.icao24)}
@@ -128,14 +128,15 @@ export function SpottingLogPanel({ onClose }: Props) {
                 {isExpanded && (
                   <ul className="mt-1.5 space-y-1 border-t border-sky-100 pt-1.5">
                     {e.sightings.map((s) => (
-                      <li key={s.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
-                        <span>{formatDate(s.spottedAt)}</span>
+                      <li key={s.id}>
                         <button
                           onClick={() => handleDelete(e.icao24, s.id)}
-                          className="text-gray-400 hover:text-red-600"
+                          className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-[11px] text-gray-500 transition-colors hover:bg-gray-100"
+                          title="Click to delete this spotting"
                           aria-label={`Delete sighting from ${formatDate(s.spottedAt)}`}
                         >
-                          ✕
+                          <span>{formatDate(s.spottedAt)}</span>
+                          <span className="text-gray-400">✕</span>
                         </button>
                       </li>
                     ))}
