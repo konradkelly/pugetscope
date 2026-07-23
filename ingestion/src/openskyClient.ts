@@ -30,6 +30,10 @@ export interface StateVector {
   geoAltitude: number | null;
   squawk: string | null;
   spi: boolean;
+  // ADS-B emitter category (row 17) — null when the aircraft doesn't
+  // broadcast one (common for GA) or OpenSky has no info. See
+  // docs/Aircraft-type-visual-differentiation.md for the value table.
+  category: number | null;
 }
 
 // Field order per OpenSky REST API docs — see docs/SPEC.md §4
@@ -110,6 +114,7 @@ function parseRow(row: RawStateRow): StateVector {
     geoAltitude: row[13],
     squawk: row[14],
     spi: row[15],
+    category: row[17] ?? null,
   };
 }
 
@@ -121,6 +126,9 @@ export async function fetchPugetSoundStates(): Promise<StateVector[]> {
   url.searchParams.set("lomin", String(lomin));
   url.searchParams.set("lamax", String(lamax));
   url.searchParams.set("lomax", String(lomax));
+  // Without this, OpenSky omits field 17 (category) entirely rather than
+  // sending it as null — every aircraft would parse as category: null.
+  url.searchParams.set("extended", "1");
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },

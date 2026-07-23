@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
+import { AircraftLegend } from "./components/AircraftLegend.js";
 import { AuthPanel } from "./components/AuthPanel.js";
 import { NeighborhoodAnalyticsPanel } from "./components/NeighborhoodAnalyticsPanel.js";
 import { TrafficVolumePanel } from "./components/TrafficVolumePanel.js";
@@ -15,6 +16,7 @@ export default function App() {
   const [showNoisePanel, setShowNoisePanel] = useState(false);
   const [showTrafficPanel, setShowTrafficPanel] = useState(false);
   const [showSpottingLog, setShowSpottingLog] = useState(false);
+  const [showLegend, setShowLegend] = useState(true);
 
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null));
@@ -68,16 +70,31 @@ export default function App() {
         </button>
       )}
 
-      {showTrafficPanel ? (
-        <TrafficVolumePanel onClose={() => setShowTrafficPanel(false)} />
-      ) : (
-        <button
-          onClick={() => setShowTrafficPanel(true)}
-          className="absolute bottom-12 right-4 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
-        >
-          📈 Traffic volume
-        </button>
-      )}
+      {/* Stacked (see the top-left comment above) so the legend's height
+          doesn't collide with the traffic volume toggle/panel below it. */}
+      <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2">
+        {showTrafficPanel ? (
+          <TrafficVolumePanel onClose={() => setShowTrafficPanel(false)} />
+        ) : (
+          <button
+            onClick={() => setShowTrafficPanel(true)}
+            className="rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+          >
+            📈 Traffic volume
+          </button>
+        )}
+
+        {showLegend ? (
+          <AircraftLegend onClose={() => setShowLegend(false)} />
+        ) : (
+          <button
+            onClick={() => setShowLegend(true)}
+            className="rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+          >
+            ✈️ Legend
+          </button>
+        )}
+      </div>
     </div>
   );
 }

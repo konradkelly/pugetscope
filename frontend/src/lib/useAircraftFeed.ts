@@ -37,6 +37,11 @@ export interface StateVector {
   geoAltitude: number | null;
   squawk: string | null;
   spi: boolean;
+  // ADS-B emitter category — see docs/Aircraft-type-visual-differentiation.md.
+  category: number | null;
+  // ICAO type designator (e.g. "B738", "C172") from the aircraft reference
+  // table — see docs/Aircraft-type-visual-differentiation.md.
+  typecode: string | null;
   // Present only when a route was resolved for this callsign (docs/SPEC.md §12).
   route?: FlightRoute;
 }

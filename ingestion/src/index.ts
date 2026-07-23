@@ -4,6 +4,7 @@ import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
 import { writeLatestPositions } from "./db/redis.js";
 import { insertPositions } from "./db/postgres.js";
 import { attachRoutes } from "./enrichment/attachRoutes.js";
+import { attachAircraftType } from "./enrichment/attachAircraftType.js";
 import { startFidsRefreshWorker } from "./enrichment/fidsRefreshWorker.js";
 
 async function pollOnce(): Promise<void> {
@@ -13,7 +14,12 @@ async function pollOnce(): Promise<void> {
   // to Redis, so the API/WebSocket serve origin/destination. Position
   // history (insertPositions) doesn't need routes, so it uses the raw
   // states and runs in parallel.
-  const [enriched] = await Promise.all([attachRoutes(states), insertPositions(states)]);
+  const [routed] = await Promise.all([attachRoutes(states), insertPositions(states)]);
+  // Typecode lookup runs after insertPositions (which upserts new icao24
+  // rows) rather than in parallel with it, so a first-ever-seen aircraft's
+  // own upsert isn't racing this read — not that it matters for typecode
+  // (enrich.ts fills that separately), but it keeps the query timing simple.
+  const enriched = await attachAircraftType(routed);
   await writeLatestPositions(enriched);
 }
 
