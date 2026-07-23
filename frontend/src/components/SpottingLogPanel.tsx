@@ -19,6 +19,7 @@ export function SpottingLogPanel({ onClose }: Props) {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +39,40 @@ export function SpottingLogPanel({ onClose }: Props) {
       cancelled = true;
     };
   }, []);
+
+  function handleDelete(icao24: string, sightingId: number) {
+    api
+      .deleteSpotting(sightingId)
+      .then(() => {
+        let removedAircraft = false;
+        setEntries((prev) => {
+          if (!prev) return prev;
+          return prev
+            .map((e) => {
+              if (e.icao24 !== icao24) return e;
+              const sightings = e.sightings.filter((s) => s.id !== sightingId);
+              if (sightings.length === 0) removedAircraft = true;
+              return {
+                ...e,
+                sightings,
+                timesSpotted: sightings.length,
+                firstSpottedAt: sightings[sightings.length - 1]?.spottedAt ?? e.firstSpottedAt,
+                lastSpottedAt: sightings[0]?.spottedAt ?? e.lastSpottedAt,
+              };
+            })
+            .filter((e) => e.sightings.length > 0);
+        });
+        setTotals((prev) =>
+          prev
+            ? {
+                totalSightings: prev.totalSightings - 1,
+                uniqueAircraft: removedAircraft ? prev.uniqueAircraft - 1 : prev.uniqueAircraft,
+              }
+            : prev,
+        );
+      })
+      .catch((err) => setError(err.message));
+  }
 
   return (
     <div className="w-80 rounded-lg bg-white/95 p-4 shadow-lg backdrop-blur">
@@ -65,25 +100,50 @@ export function SpottingLogPanel({ onClose }: Props) {
 
       {!error && entries && entries.length > 0 && (
         <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto text-sm">
-          {entries.map((e) => (
-            <li key={e.icao24} className="rounded bg-sky-50 px-2 py-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{e.registration ?? e.icao24}</span>
-                <span className="whitespace-nowrap rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-medium text-white">
-                  ×{e.timesSpotted}
-                </span>
-              </div>
-              <div className="text-xs text-gray-500">
-                {[e.manufacturer, e.model].filter(Boolean).join(" ") || "Unknown type"}
-                {e.operator && <> · {e.operator}</>}
-              </div>
-              <div className="mt-0.5 text-[10px] text-gray-400">
-                {e.timesSpotted > 1
-                  ? `${formatDate(e.firstSpottedAt)} – ${formatDate(e.lastSpottedAt)}`
-                  : formatDate(e.lastSpottedAt)}
-              </div>
-            </li>
-          ))}
+          {entries.map((e) => {
+            const isExpanded = expanded === e.icao24;
+            return (
+              <li key={e.icao24} className="rounded bg-sky-50 px-2 py-1.5">
+                <button
+                  className="w-full text-left"
+                  onClick={() => setExpanded(isExpanded ? null : e.icao24)}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{e.registration ?? e.icao24}</span>
+                    <span className="whitespace-nowrap rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-medium text-white">
+                      ×{e.timesSpotted}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {[e.manufacturer, e.model].filter(Boolean).join(" ") || "Unknown type"}
+                    {e.operator && <> · {e.operator}</>}
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-gray-400">
+                    {e.timesSpotted > 1
+                      ? `${formatDate(e.firstSpottedAt)} – ${formatDate(e.lastSpottedAt)} (tap for all dates)`
+                      : formatDate(e.lastSpottedAt)}
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <ul className="mt-1.5 space-y-1 border-t border-sky-100 pt-1.5">
+                    {e.sightings.map((s) => (
+                      <li key={s.id} className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
+                        <span>{formatDate(s.spottedAt)}</span>
+                        <button
+                          onClick={() => handleDelete(e.icao24, s.id)}
+                          className="text-gray-400 hover:text-red-600"
+                          aria-label={`Delete sighting from ${formatDate(s.spottedAt)}`}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

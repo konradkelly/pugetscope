@@ -30,6 +30,7 @@ interface LifeListRow {
   times_spotted: string;
   first_spotted_at: string;
   last_spotted_at: string;
+  sightings: { id: number; spottedAt: string }[];
   registration: string | null;
   manufacturer: string | null;
   model: string | null;
@@ -111,6 +112,7 @@ export async function spottingsRoutes(app: FastifyInstance): Promise<void> {
               count(*) AS times_spotted,
               min(s.spotted_at) AS first_spotted_at,
               max(s.spotted_at) AS last_spotted_at,
+              json_agg(json_build_object('id', s.id, 'spottedAt', s.spotted_at) ORDER BY s.spotted_at DESC) AS sightings,
               a.registration, a.manufacturer, a.model, a.operator
        FROM spottings s
        LEFT JOIN aircraft a ON a.icao24 = s.icao24
@@ -125,6 +127,7 @@ export async function spottingsRoutes(app: FastifyInstance): Promise<void> {
       timesSpotted: Number(r.times_spotted),
       firstSpottedAt: r.first_spotted_at,
       lastSpottedAt: r.last_spotted_at,
+      sightings: r.sightings,
       registration: r.registration,
       manufacturer: r.manufacturer,
       model: r.model,
@@ -136,5 +139,28 @@ export async function spottingsRoutes(app: FastifyInstance): Promise<void> {
       uniqueAircraft: entries.length,
       totalSightings: entries.reduce((sum, e) => sum + e.timesSpotted, 0),
     });
+  });
+
+  // Delete a single sighting — e.g. to correct a mis-logged entry. Scoped to
+  // the owning user so one account can't delete another's spottings.
+  app.delete<{ Params: { id: string } }>("/spottings/:id", async (request, reply) => {
+    const userId = await getCurrentUserId(request);
+    if (!userId) return reply.code(401).send({ error: "log in to manage your spotting log" });
+
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id)) {
+      return reply.code(400).send({ error: "invalid spotting id" });
+    }
+
+    const result = await pool.query("DELETE FROM spottings WHERE id = $1 AND user_id = $2", [
+      id,
+      userId,
+    ]);
+
+    if (result.rowCount === 0) {
+      return reply.code(404).send({ error: "spotting not found" });
+    }
+
+    return reply.code(204).send();
   });
 }

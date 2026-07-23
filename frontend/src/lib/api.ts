@@ -100,11 +100,17 @@ export interface SpottingResult {
   isFirstSighting: boolean;
 }
 
+export interface Sighting {
+  id: number;
+  spottedAt: string;
+}
+
 export interface SpottingLogEntry {
   icao24: string;
   timesSpotted: number;
   firstSpottedAt: string;
   lastSpottedAt: string;
+  sightings: Sighting[];
   registration: string | null;
   manufacturer: string | null;
   model: string | null;
@@ -177,4 +183,7 @@ export const api = {
     }),
 
   getSpottings: () => request<SpottingLog>("/spottings"),
+
+  deleteSpotting: (id: number) =>
+    request<void>(`/spottings/${id}`, { method: "DELETE" }),
 };
