@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Check, ClipboardList } from "lucide-react";
 import { api, type AircraftDetail, type CurrentUser, type SpottingResult } from "../lib/api.js";
 import type { Airport, RouteConfidence, StateVector } from "../lib/useAircraftFeed.js";
 
@@ -155,13 +156,19 @@ export function AircraftDetailPanel({ icao24, live, user, onClose }: Props) {
           <button
             onClick={handleLogSighting}
             disabled={logState.status === "pending" || logState.status === "done"}
-            className="w-full rounded bg-sky-600 py-1 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-1.5 rounded bg-sky-600 py-1 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
           >
-            {logState.status === "done"
-              ? "✓ Logged"
-              : logState.status === "pending"
-                ? "Logging…"
-                : "📋 Log this sighting"}
+            {logState.status === "done" ? (
+              <>
+                <Check size={16} /> Logged
+              </>
+            ) : logState.status === "pending" ? (
+              "Logging…"
+            ) : (
+              <>
+                <ClipboardList size={16} /> Log this sighting
+              </>
+            )}
           </button>
           {logState.status === "done" && (
             <p className="mt-1 text-center text-xs text-gray-500">

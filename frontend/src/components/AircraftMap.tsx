@@ -2,7 +2,12 @@ import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
-import { PUGET_SOUND_CENTER, PUGET_SOUND_DEFAULT_ZOOM } from "../lib/config.js";
+import {
+  PUGET_SOUND_CENTER,
+  PUGET_SOUND_DEFAULT_ZOOM,
+  PUGET_SOUND_MAX_BOUNDS,
+  PUGET_SOUND_MIN_ZOOM,
+} from "../lib/config.js";
 import type { AircraftByIcao } from "../lib/useAircraftFeed.js";
 import { AIRCRAFT_CLASS_ICON, AIRCRAFT_CLASS_SIZE, classifyAircraft, type AircraftClass } from "../lib/aircraftCategory.js";
 
@@ -74,6 +79,8 @@ export function AircraftMap({ aircraft, selectedIcao24, onSelect }: Props) {
       style: OSM_STYLE,
       center: PUGET_SOUND_CENTER,
       zoom: PUGET_SOUND_DEFAULT_ZOOM,
+      maxBounds: PUGET_SOUND_MAX_BOUNDS,
+      minZoom: PUGET_SOUND_MIN_ZOOM,
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
 

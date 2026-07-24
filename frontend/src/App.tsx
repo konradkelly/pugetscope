@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Circle, ClipboardList, Plane, TrendingUp, Volume2 } from "lucide-react";
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
@@ -39,9 +40,9 @@ export default function App() {
           ) : (
             <button
               onClick={() => setShowSpottingLog(true)}
-              className="rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+              className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
             >
-              📋 My spotting log
+              <ClipboardList size={16} /> My spotting log
             </button>
           ))}
       </div>
@@ -55,8 +56,9 @@ export default function App() {
         />
       )}
 
-      <div className="absolute bottom-4 left-4 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
-        {connected ? "🟢 live" : "🔴 reconnecting…"} · {aircraft.size} aircraft
+      <div className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
+        <Circle size={8} className={connected ? "fill-green-500 text-green-500" : "fill-red-500 text-red-500"} />
+        {connected ? "live" : "reconnecting…"} · {aircraft.size} aircraft
       </div>
 
       {showNoisePanel ? (
@@ -64,9 +66,9 @@ export default function App() {
       ) : (
         <button
           onClick={() => setShowNoisePanel(true)}
-          className="absolute bottom-12 left-4 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+          className="absolute bottom-12 left-4 flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
         >
-          📊 Neighborhood noise
+          <Volume2 size={16} /> Neighborhood noise
         </button>
       )}
 
@@ -78,9 +80,9 @@ export default function App() {
         ) : (
           <button
             onClick={() => setShowTrafficPanel(true)}
-            className="rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
           >
-            📈 Traffic volume
+            <TrendingUp size={16} /> Traffic volume
           </button>
         )}
 
@@ -89,9 +91,9 @@ export default function App() {
         ) : (
           <button
             onClick={() => setShowLegend(true)}
-            className="rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
+            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
           >
-            ✈️ Legend
+            <Plane size={16} /> Legend
           </button>
         )}
       </div>
