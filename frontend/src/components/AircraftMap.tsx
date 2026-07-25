@@ -11,19 +11,14 @@ import {
 import type { AircraftByIcao } from "../lib/useAircraftFeed.js";
 import { AIRCRAFT_CLASS_ICON, AIRCRAFT_CLASS_SIZE, classifyAircraft, type AircraftClass } from "../lib/aircraftCategory.js";
 
-// Plain OSM raster tiles — see docs/SPEC.md §6 (MapLibre + OpenStreetMap, no vendor lock-in).
-const OSM_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
-    },
-  },
-  layers: [{ id: "osm", type: "raster", source: "osm" }],
-};
+// OpenFreeMap's "Bright" vector basemap — free, no API key, no rate limit,
+// still OSM data underneath (open, no vendor lock-in — see docs/SPEC.md §6).
+// Also tried: Positron (too flat/gray), Liberty (too saturated/busy), and
+// the unlisted "dark" style (great control-room look, but would need every
+// panel restyled to match — bigger scope than a basemap swap, revisit later
+// if a real dark mode happens). Bright keeps real color for water/parks/
+// roads while staying calmer than the original raw-OSM raster tiles.
+const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
 
 interface Props {
   aircraft: AircraftByIcao;
@@ -76,7 +71,7 @@ export function AircraftMap({ aircraft, selectedIcao24, onSelect }: Props) {
     if (!containerRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: OSM_STYLE,
+      style: MAP_STYLE_URL,
       center: PUGET_SOUND_CENTER,
       zoom: PUGET_SOUND_DEFAULT_ZOOM,
       maxBounds: PUGET_SOUND_MAX_BOUNDS,
