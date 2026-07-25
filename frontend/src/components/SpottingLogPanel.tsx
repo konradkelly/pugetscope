@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type SpottingLogEntry } from "../lib/api.js";
+import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   onClose: () => void;
@@ -75,20 +76,16 @@ export function SpottingLogPanel({ onClose }: Props) {
   }
 
   return (
-    <div className="w-80 rounded-lg bg-white/95 p-4 shadow-lg backdrop-blur">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold leading-tight">My spotting log</h2>
-          <p className="text-sm text-gray-500">
-            {totals
-              ? `${totals.uniqueAircraft} aircraft · ${totals.totalSightings} sighting${totals.totalSightings === 1 ? "" : "s"}`
-              : "Loading…"}
-          </p>
-        </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-700" aria-label="Close">
-          ✕
-        </button>
-      </div>
+    <Panel className="w-80 p-4">
+      <PanelHeader
+        title="My spotting log"
+        subtitle={
+          totals
+            ? `${totals.uniqueAircraft} aircraft · ${totals.totalSightings} sighting${totals.totalSightings === 1 ? "" : "s"}`
+            : "Loading…"
+        }
+        onClose={onClose}
+      />
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
@@ -147,6 +144,6 @@ export function SpottingLogPanel({ onClose }: Props) {
           })}
         </ul>
       )}
-    </div>
+    </Panel>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, ClipboardList } from "lucide-react";
 import { api, type AircraftDetail, type CurrentUser, type SpottingResult } from "../lib/api.js";
 import type { Airport, RouteConfidence, StateVector } from "../lib/useAircraftFeed.js";
+import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   icao24: string;
@@ -80,24 +81,12 @@ export function AircraftDetailPanel({ icao24, live, user, onClose }: Props) {
   const route = live?.route;
 
   return (
-    <div className="absolute right-4 top-4 w-72 rounded-lg bg-white/95 p-4 shadow-lg backdrop-blur">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold leading-tight">
-            {live?.callsign?.trim() || icao24}
-          </h2>
-          {route?.airline && (
-            <p className="text-sm text-gray-500">{route.airline}</p>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-700"
-          aria-label="Close"
-        >
-          ✕
-        </button>
-      </div>
+    <Panel className="absolute right-4 top-4 w-72 p-4">
+      <PanelHeader
+        title={live?.callsign?.trim() || icao24}
+        subtitle={route?.airline}
+        onClose={onClose}
+      />
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
@@ -184,6 +173,6 @@ export function AircraftDetailPanel({ icao24, live, user, onClose }: Props) {
           )}
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

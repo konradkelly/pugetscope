@@ -4,6 +4,7 @@ import {
   type OverflightEvent,
   type OverflightHour,
 } from "../lib/api.js";
+import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   onClose: () => void;
@@ -121,16 +122,12 @@ export function NeighborhoodAnalyticsPanel({ onClose }: Props) {
   const hovered = hoveredHour !== null ? safeHours.find((h) => h.hour === hoveredHour) : undefined;
 
   return (
-    <div className="absolute bottom-12 left-4 w-[420px] rounded-lg bg-white/95 p-4 shadow-lg backdrop-blur">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold leading-tight">Neighborhood noise</h2>
-          <p className="text-sm text-gray-500">Overflights by hour of day, Pacific time</p>
-        </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-700" aria-label="Close">
-          ✕
-        </button>
-      </div>
+    <Panel className="w-[420px] p-4">
+      <PanelHeader
+        title="Neighborhood noise"
+        subtitle="Overflights by hour of day, Pacific time"
+        onClose={onClose}
+      />
 
       <div className="mt-3 flex gap-2">
         <select
@@ -270,6 +267,6 @@ export function NeighborhoodAnalyticsPanel({ onClose }: Props) {
           </ul>
         )}
       </div>
-    </div>
+    </Panel>
   );
 }

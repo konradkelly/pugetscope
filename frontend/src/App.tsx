@@ -4,47 +4,44 @@ import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
 import { AuthPanel } from "./components/AuthPanel.js";
+import { IconRail, type RailItem } from "./components/IconRail.js";
 import { NeighborhoodAnalyticsPanel } from "./components/NeighborhoodAnalyticsPanel.js";
 import { TrafficVolumePanel } from "./components/TrafficVolumePanel.js";
 import { SpottingLogPanel } from "./components/SpottingLogPanel.js";
 import { useAircraftFeed } from "./lib/useAircraftFeed.js";
 import { api, type CurrentUser } from "./lib/api.js";
 
+type RailPanelId = "legend" | "traffic" | "noise" | "spotting";
+
 export default function App() {
   const { aircraft, connected } = useAircraftFeed();
   const [selectedIcao24, setSelectedIcao24] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
-  const [showNoisePanel, setShowNoisePanel] = useState(false);
-  const [showTrafficPanel, setShowTrafficPanel] = useState(false);
-  const [showSpottingLog, setShowSpottingLog] = useState(false);
-  const [showLegend, setShowLegend] = useState(true);
+  // Legend open by default so marker size/shape is explained on first load;
+  // everything else starts collapsed, same as before this was a rail.
+  const [activeRailPanel, setActiveRailPanel] = useState<RailPanelId | null>("legend");
 
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null));
   }, []);
 
+  const railItems: RailItem[] = [
+    { id: "legend", icon: Plane, label: "Aircraft type legend" },
+    { id: "traffic", icon: TrendingUp, label: "Traffic volume" },
+    { id: "noise", icon: Volume2, label: "Neighborhood noise" },
+    ...(user ? [{ id: "spotting", icon: ClipboardList, label: "My spotting log" } as const] : []),
+  ];
+
+  function toggleRailPanel(id: string) {
+    setActiveRailPanel((current) => (current === id ? null : (id as RailPanelId)));
+  }
+
   return (
     <div className="relative h-screen w-screen">
       <AircraftMap aircraft={aircraft} selectedIcao24={selectedIcao24} onSelect={setSelectedIcao24} />
 
-      {/* Stacked in normal flow (not each independently `absolute`-positioned)
-          so the spotting-log toggle never overlaps AuthPanel regardless of
-          whether it's rendering the short logged-in chip or the taller
-          login/signup form. */}
-      <div className="absolute left-4 top-4 flex flex-col items-start gap-2">
+      <div className="absolute left-4 top-4">
         <AuthPanel user={user} onAuthChange={setUser} />
-
-        {user &&
-          (showSpottingLog ? (
-            <SpottingLogPanel onClose={() => setShowSpottingLog(false)} />
-          ) : (
-            <button
-              onClick={() => setShowSpottingLog(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
-            >
-              <ClipboardList size={16} /> My spotting log
-            </button>
-          ))}
       </div>
 
       {selectedIcao24 && (
@@ -61,42 +58,32 @@ export default function App() {
         {connected ? "live" : "reconnecting…"} · {aircraft.size} aircraft
       </div>
 
-      {showNoisePanel ? (
-        <NeighborhoodAnalyticsPanel onClose={() => setShowNoisePanel(false)} />
-      ) : (
-        <button
-          onClick={() => setShowNoisePanel(true)}
-          className="absolute bottom-12 left-4 flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
-        >
-          <Volume2 size={16} /> Neighborhood noise
-        </button>
-      )}
-
-      {/* Stacked (see the top-left comment above) so the legend's height
-          doesn't collide with the traffic volume toggle/panel below it. */}
-      <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2">
-        {showTrafficPanel ? (
-          <TrafficVolumePanel onClose={() => setShowTrafficPanel(false)} />
-        ) : (
-          <button
-            onClick={() => setShowTrafficPanel(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
-          >
-            <TrendingUp size={16} /> Traffic volume
-          </button>
-        )}
-
-        {showLegend ? (
-          <AircraftLegend onClose={() => setShowLegend(false)} />
-        ) : (
-          <button
-            onClick={() => setShowLegend(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 text-sm shadow-lg backdrop-blur hover:bg-white"
-          >
-            <Plane size={16} /> Legend
-          </button>
-        )}
+      {/* Single dock replacing the four independently-positioned corner
+          toggles (legend/traffic/noise/spotting log) this app used to have —
+          see docs/SPEC.md §6. Bottom-anchored (like the old per-panel corner
+          buttons were) and capped well short of the viewport top so even the
+          tallest panel (traffic volume) can't grow up into AuthPanel's space
+          — vertical centering was tried first and didn't hold up there. */}
+      <div className="absolute bottom-12 left-4">
+        <IconRail items={railItems} activeId={activeRailPanel} onSelect={toggleRailPanel} />
       </div>
+
+      {activeRailPanel && (
+        <div className="absolute bottom-12 left-20 max-h-[65vh] overflow-y-auto">
+          {activeRailPanel === "legend" && (
+            <AircraftLegend onClose={() => setActiveRailPanel(null)} />
+          )}
+          {activeRailPanel === "traffic" && (
+            <TrafficVolumePanel onClose={() => setActiveRailPanel(null)} />
+          )}
+          {activeRailPanel === "noise" && (
+            <NeighborhoodAnalyticsPanel onClose={() => setActiveRailPanel(null)} />
+          )}
+          {activeRailPanel === "spotting" && user && (
+            <SpottingLogPanel onClose={() => setActiveRailPanel(null)} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   type TrafficDayOfWeek,
   type TrafficHour,
 } from "../lib/api.js";
+import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   onClose: () => void;
@@ -237,16 +238,12 @@ export function TrafficVolumePanel({ onClose }: Props) {
   const maxAirportFlights = niceMax(Math.max(1, ...(totals ?? []).map((a) => a.flights)));
 
   return (
-    <div className="absolute bottom-12 right-4 w-[460px] rounded-lg bg-white/95 p-4 shadow-lg backdrop-blur">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold leading-tight">Traffic volume</h2>
-          <p className="text-sm text-gray-500">Aircraft near each field, by hour, day, and airport</p>
-        </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-700" aria-label="Close">
-          ✕
-        </button>
-      </div>
+    <Panel className="w-[460px] p-4">
+      <PanelHeader
+        title="Traffic volume"
+        subtitle="Aircraft near each field, by hour, day, and airport"
+        onClose={onClose}
+      />
 
       <div className="mt-3 flex gap-2">
         <select
@@ -525,6 +522,6 @@ export function TrafficVolumePanel({ onClose }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </Panel>
   );
 }
