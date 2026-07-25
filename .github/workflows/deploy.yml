@@ -102,9 +102,17 @@ jobs:
           AERODATABOX_API_KEY=${{ secrets.AERODATABOX_API_KEY }}
           UMAMI_APP_SECRET=${{ secrets.UMAMI_APP_SECRET }}
           UMAMI_DB_PASSWORD=${{ secrets.UMAMI_DB_PASSWORD }}
+          VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY=${{ secrets.VAPID_PRIVATE_KEY }}
           EOF
 
       - name: Deploy (build, push, apply)
+        env:
+          # push-ecr.sh bakes this into the frontend image at build time
+          # (frontend/Dockerfile) — the public key isn't sensitive, but
+          # sourcing it from the same secret as VAPID_PRIVATE_KEY keeps both
+          # halves of the pair defined in one place.
+          VITE_VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
         run: bash k8s/up-ec2.sh
 
       - name: Clean up tunnel + local credentials
