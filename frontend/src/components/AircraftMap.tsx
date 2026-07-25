@@ -24,6 +24,13 @@ interface Props {
   aircraft: AircraftByIcao;
   selectedIcao24: string | null;
   onSelect: (icao24: string) => void;
+  // While armed, a map click drops a pin (for a geofence alert) instead of
+  // the normal marker interaction — see AlertsPanel.
+  pinDropMode?: boolean;
+  onPinDrop?: (lngLat: { lat: number; lng: number }) => void;
+  // Renders a marker at the dropped pin so there's visible confirmation of
+  // where the alert will be centered while its form is open.
+  pendingPin?: { lat: number; lng: number } | null;
 }
 
 const TRAIL_SOURCE_ID = "flight-path";
@@ -53,10 +60,32 @@ function emptyLineCollection(): FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
-export function AircraftMap({ aircraft, selectedIcao24, onSelect }: Props) {
+// A simple drop-pin teardrop, visually distinct from the aircraft silhouettes
+// above and from the violet "selected aircraft" color.
+const PENDING_PIN_SVG = `
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="#dc2626" class="drop-shadow">
+    <path d="M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/>
+  </svg>
+`;
+
+function createPendingPinElement(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.innerHTML = PENDING_PIN_SVG;
+  return el;
+}
+
+export function AircraftMap({
+  aircraft,
+  selectedIcao24,
+  onSelect,
+  pinDropMode,
+  onPinDrop,
+  pendingPin,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const pendingPinMarkerRef = useRef<maplibregl.Marker | null>(null);
   // Category rarely if ever changes for a given aircraft, but it can arrive
   // a beat after the marker is first created (first update after "unknown").
   // Tracked separately from the marker so we only touch innerHTML when the
@@ -97,6 +126,48 @@ export function AircraftMap({ aircraft, selectedIcao24, onSelect }: Props) {
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pinDropMode || !onPinDrop) return;
+
+    map.getCanvas().style.cursor = "crosshair";
+    function handleClick(e: maplibregl.MapMouseEvent) {
+      onPinDrop!({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+    }
+    map.on("click", handleClick);
+
+    return () => {
+      map.off("click", handleClick);
+      map.getCanvas().style.cursor = "";
+    };
+  }, [pinDropMode, onPinDrop]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!pendingPin) {
+      pendingPinMarkerRef.current?.remove();
+      pendingPinMarkerRef.current = null;
+      return;
+    }
+
+    let marker = pendingPinMarkerRef.current;
+    if (!marker) {
+      // setLngLat before addTo — addTo projects the marker's position
+      // immediately, and there isn't one yet otherwise (same ordering
+      // requirement as the aircraft markers below).
+      marker = new maplibregl.Marker({ element: createPendingPinElement(), anchor: "bottom" }).setLngLat([
+        pendingPin.lng,
+        pendingPin.lat,
+      ]);
+      marker.addTo(map);
+      pendingPinMarkerRef.current = marker;
+    } else {
+      marker.setLngLat([pendingPin.lng, pendingPin.lat]);
+    }
+  }, [pendingPin]);
 
   useEffect(() => {
     const map = mapRef.current;

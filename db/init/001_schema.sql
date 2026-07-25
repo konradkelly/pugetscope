@@ -120,3 +120,40 @@ CREATE INDEX IF NOT EXISTS spottings_user_id_spotted_at_idx
 
 CREATE INDEX IF NOT EXISTS spottings_user_id_icao24_idx
   ON spottings (user_id, icao24);
+
+-- Anonymous, device-scoped push alerts — no account required. `device_id` is
+-- a UUID generated client-side and kept in localStorage; knowing it is the
+-- only "auth" a device has, the same trust model as a bearer token. Meant to
+-- double as an on-ramp to a future real (account-based) watchlist.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  device_id UUID PRIMARY KEY,
+  endpoint TEXT NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per watch a device has created. `kind` picks which half of the
+-- columns below apply: 'geofence' uses location/radius_m/max_altitude_m,
+-- 'callsign' uses match_value (checked against the live callsign or icao24 —
+-- see websocket/src/alerts/matching.ts). `last_triggered_at` drives a
+-- per-watch cooldown so a loitering aircraft doesn't refire on every ~30s
+-- poll (same idea as spottings' DUPLICATE_COOLDOWN_MINUTES).
+CREATE TABLE IF NOT EXISTS alert_watches (
+  id BIGSERIAL PRIMARY KEY,
+  device_id UUID NOT NULL REFERENCES push_subscriptions(device_id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('geofence', 'callsign')),
+  label TEXT,
+  location GEOGRAPHY(POINT, 4326),
+  radius_m INTEGER,
+  max_altitude_m DOUBLE PRECISION,
+  match_value TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_triggered_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS alert_watches_device_id_idx
+  ON alert_watches (device_id);
+
+CREATE INDEX IF NOT EXISTS alert_watches_location_gist_idx
+  ON alert_watches USING GIST (location);

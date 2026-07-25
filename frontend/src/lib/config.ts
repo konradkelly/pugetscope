@@ -1,6 +1,10 @@
 export const config = {
   apiUrl: import.meta.env.VITE_API_URL ?? "http://localhost:3000",
   wsUrl: import.meta.env.VITE_WS_URL ?? "ws://localhost:3001/live",
+  // Empty disables push alerts client-side (see lib/push.ts) rather than
+  // throwing — matches websocket/src/config.ts's server-side treatment of
+  // an unset VAPID key pair.
+  vapidPublicKey: import.meta.env.VITE_VAPID_PUBLIC_KEY ?? "",
 };
 
 // Centered on the actual airport corridor (average of REGIONAL_AIRPORTS in

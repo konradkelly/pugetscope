@@ -4,6 +4,9 @@ import cors from "@fastify/cors";
 import websocketPlugin from "@fastify/websocket";
 import { config } from "./config.js";
 import { getSnapshot, subscriber } from "./db/redis.js";
+import { getWatches, startWatchCache } from "./alerts/cache.js";
+import { matchWatches, type LiveAircraft } from "./alerts/matching.js";
+import { sendAlertNotifications } from "./alerts/notify.js";
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
@@ -24,12 +27,22 @@ async function main(): Promise<void> {
     });
   });
 
+  startWatchCache();
+
   await subscriber.subscribe("aircraft:updates");
   subscriber.on("message", (_channel, message) => {
-    const payload = JSON.stringify({ type: "update", data: JSON.parse(message) });
+    const data: LiveAircraft[] = JSON.parse(message);
+    const payload = JSON.stringify({ type: "update", data });
     for (const socket of sockets) {
       if (socket.readyState === socket.OPEN) socket.send(payload);
     }
+
+    // Fire-and-forget: alert delivery must never hold up the live position
+    // fan-out above.
+    const matches = matchWatches(data, getWatches());
+    sendAlertNotifications(matches).catch((err) =>
+      app.log.error({ err }, "alert notification dispatch failed"),
+    );
   });
 
   app.get("/healthz", async () => ({ ok: true, connections: sockets.size }));

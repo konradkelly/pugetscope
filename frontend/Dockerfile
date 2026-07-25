@@ -8,8 +8,10 @@ COPY . .
 # these must match whatever host the Ingress serves the app on (k8s/base/ingress.yaml).
 ARG VITE_API_URL=http://pugetscope.127.0.0.1.nip.io:8081/api
 ARG VITE_WS_URL=ws://pugetscope.127.0.0.1.nip.io:8081/live
+ARG VITE_VAPID_PUBLIC_KEY=
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_WS_URL=$VITE_WS_URL
+ENV VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY
 RUN npm run build
 
 FROM nginx:1.27-alpine AS runtime

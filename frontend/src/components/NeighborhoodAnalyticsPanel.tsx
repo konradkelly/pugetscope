@@ -8,6 +8,8 @@ import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   onClose: () => void;
+  initialZip?: string;
+  onZipChange?: (zip: string) => void;
 }
 
 interface ZipOption {
@@ -16,7 +18,7 @@ interface ZipOption {
 }
 
 // Zips confirmed to have loaded boundary data and noise relevance — see docs/SPEC.md §13.
-const ZIP_OPTIONS: ZipOption[] = [
+export const ZIP_OPTIONS: ZipOption[] = [
   { zip: "98108", label: "98108 — Beacon Hill / Georgetown" },
   { zip: "98146", label: "98146 — Burien" },
   { zip: "98158", label: "98158 — SeaTac / Des Moines" },
@@ -55,9 +57,15 @@ function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-export function NeighborhoodAnalyticsPanel({ onClose }: Props) {
-  const [zip, setZip] = useState(ZIP_OPTIONS[0].zip);
+export function NeighborhoodAnalyticsPanel({ onClose, initialZip, onZipChange }: Props) {
+  const isValidZip = initialZip && ZIP_OPTIONS.some((opt) => opt.zip === initialZip);
+  const [zip, setZip] = useState(isValidZip ? initialZip : ZIP_OPTIONS[0].zip);
   const [days, setDays] = useState(30);
+
+  function selectZip(next: string) {
+    setZip(next);
+    onZipChange?.(next);
+  }
 
   const [hours, setHours] = useState<OverflightHour[] | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -132,7 +140,7 @@ export function NeighborhoodAnalyticsPanel({ onClose }: Props) {
       <div className="mt-3 flex gap-2">
         <select
           value={zip}
-          onChange={(e) => setZip(e.target.value)}
+          onChange={(e) => selectZip(e.target.value)}
           className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
         >
           {ZIP_OPTIONS.map((opt) => (

@@ -123,6 +123,40 @@ export interface SpottingLog {
   totalSightings: number;
 }
 
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export type AlertWatchKind = "geofence" | "callsign";
+
+export interface CreateGeofenceWatch {
+  kind: "geofence";
+  label?: string;
+  lat: number;
+  lon: number;
+  radiusM: number;
+  maxAltitudeM?: number;
+}
+
+export interface CreateCallsignWatch {
+  kind: "callsign";
+  label?: string;
+  matchValue: string;
+}
+
+export interface AlertWatch {
+  id: number;
+  kind: AlertWatchKind;
+  label: string | null;
+  lat: number | null;
+  lon: number | null;
+  radiusM: number | null;
+  maxAltitudeM: number | null;
+  matchValue: string | null;
+  createdAt: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${config.apiUrl}${path}`, {
     ...init,
@@ -186,4 +220,24 @@ export const api = {
 
   deleteSpotting: (id: number) =>
     request<void>(`/spottings/${id}`, { method: "DELETE" }),
+
+  subscribePush: (deviceId: string, subscription: PushSubscriptionPayload) =>
+    request<void>("/alerts/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ deviceId, subscription }),
+    }),
+
+  createWatch: (deviceId: string, watch: CreateGeofenceWatch | CreateCallsignWatch) =>
+    request<{ id: number }>("/alerts/watches", {
+      method: "POST",
+      body: JSON.stringify({ deviceId, ...watch }),
+    }),
+
+  getWatches: (deviceId: string) =>
+    request<{ watches: AlertWatch[] }>(`/alerts/watches?deviceId=${encodeURIComponent(deviceId)}`),
+
+  deleteWatch: (deviceId: string, id: number) =>
+    request<void>(`/alerts/watches/${id}?deviceId=${encodeURIComponent(deviceId)}`, {
+      method: "DELETE",
+    }),
 };

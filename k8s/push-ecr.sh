@@ -30,6 +30,7 @@ log "Building + pushing frontend (ec2 build args)"
 docker build \
   --build-arg VITE_API_URL="https://${DOMAIN}/api" \
   --build-arg VITE_WS_URL="wss://${DOMAIN}/live" \
+  --build-arg VITE_VAPID_PUBLIC_KEY="${VITE_VAPID_PUBLIC_KEY:-}" \
   -t "$REGISTRY/pugetscope/frontend:$TAG" ./frontend
 docker push "$REGISTRY/pugetscope/frontend:$TAG"
 
