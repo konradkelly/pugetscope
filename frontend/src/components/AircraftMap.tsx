@@ -106,7 +106,7 @@ export function AircraftMap({
       maxBounds: PUGET_SOUND_MAX_BOUNDS,
       minZoom: PUGET_SOUND_MIN_ZOOM,
     });
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.NavigationControl(), "bottom-right");
 
     map.on("load", () => {
       map.addSource(TRAIL_SOURCE_ID, { type: "geojson", data: emptyLineCollection() });
