@@ -1,6 +1,15 @@
-# Local dev infra only (Postgres + Redis). This is NOT the Kubernetes
-# deployment target — see docs/SPEC.md §9. App services run on the host
-# via `npm run dev` for fast iteration until they're containerized for k3d.
+# Local dev stack. This is NOT the Kubernetes deployment target — see
+# docs/SPEC.md §9 — it's the fast-iteration path for running the app on a
+# dev machine without a k3d cluster.
+#
+# Six services: postgres, redis, api, websocket, frontend, ingestion.
+# ingestion needs real OpenSky OAuth credentials and polls a live external
+# API continuously (docs/SPEC.md §4) — its secrets come from ingestion/.env
+# (gitignored) via env_file below rather than being written into this
+# committed file; only DATABASE_URL/REDIS_URL are overridden here to point
+# at the compose network instead of ingestion/.env's host-relative defaults.
+# Without a real OPENSKY_CLIENT_ID/SECRET in that file, this container will
+# just fail to poll — the other five services still work fine on their own.
 services:
   postgres:
     image: postgis/postgis:16-3.4
@@ -28,6 +37,73 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  api:
+    build: ./api
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      DATABASE_URL: postgres://pugetscope:pugetscope@postgres:5432/pugetscope
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: http://localhost:8090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  websocket:
+    build: ./websocket
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://pugetscope:pugetscope@postgres:5432/pugetscope
+      POSTGRES_SSL: "false"
+      CORS_ORIGIN: http://localhost:8090
+      # Throwaway local key pair (see websocket/.env.example) — not a
+      # production key, fine to keep in this dev-only compose file.
+      VAPID_PUBLIC_KEY: BOr5RPs5Kuxq5EjAcNKFAw1b0PdHjeNyGhrk7pWzmLmGRlfG8fVtf4kChrj5ARsjXQQKmIPAUYdF7KAfI7mDg0s
+      VAPID_PRIVATE_KEY: c-L7n_Hm0vN1dVqmsyU40xAkykZSmydOKEkXTKafutE
+      VAPID_SUBJECT: mailto:test@example.com
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ingestion:
+    build: ./ingestion
+    env_file:
+      - ./ingestion/.env
+    environment:
+      DATABASE_URL: postgres://pugetscope:pugetscope@postgres:5432/pugetscope
+      REDIS_URL: redis://redis:6379
+      POSTGRES_SSL: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      # Vite bakes these in at build time (see frontend/Dockerfile) — must
+      # be reachable from the browser on the host, not container-network
+      # names, since the browser (not another container) makes these calls.
+      args:
+        VITE_API_URL: http://localhost:3000
+        VITE_WS_URL: ws://localhost:3001/live
+        VITE_VAPID_PUBLIC_KEY: BOr5RPs5Kuxq5EjAcNKFAw1b0PdHjeNyGhrk7pWzmLmGRlfG8fVtf4kChrj5ARsjXQQKmIPAUYdF7KAfI7mDg0s
+    ports:
+      - "8090:80"
+    depends_on:
+      - api
+      - websocket
 
 volumes:
   pugetscope-postgres-data:

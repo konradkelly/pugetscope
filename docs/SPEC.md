@@ -21,7 +21,7 @@ Target audience: public multi-user web app — real accounts, not just a persona
 
 ### Explicitly out of scope for v1 (candidates for v2+)
 - **Flight routing enrichment** (origin/destination + self-computed ETA per aircraft) — fully designed, see §12. First v2 feature to build.
-- Airport departures/arrivals dashboard (needs a schedule data source, separate integration) — partially unblocked already: FIDS (§12) already pulls this data for route-matching, just not surfaced as its own public-facing view. Fully specced, not yet built; see §14.
+- Airport departures/arrivals dashboard (needs a schedule data source, separate integration) — partially unblocked already: FIDS (§12) already pulls this data for route-matching, just not surfaced as its own public-facing view. Built — see `api/src/routes/airports.ts`, `AirportBoardPanel.tsx`; see §14.
 - Flight playback/replay — the `positions` table has been accumulating full history (position/altitude/speed/heading per aircraft per poll) since ingestion went live; this is a query/UI problem against data already collected, not a new integration. Fully specced, not yet built; see §16.
 - Noise/overflight analytics by neighborhood — buckets overflights by neighborhood/zip polygon × time-of-day × altitude, using data already in `positions`. No new data source needed. First v2+ feature after routing; see §13.
 - Traffic volume analytics — flights/hour, busiest times of day, day-of-week patterns, split by airport (KSEA vs. the 4 regional fields). Same `positions` table, aggregate rather than per-neighborhood. Built — see `api/src/routes/traffic.ts`, `TrafficVolumePanel.tsx`, and `docs/rollup-tables.md` for the pre-aggregation design this ended up needing.
@@ -243,9 +243,14 @@ Goal: answer "what flew over this specific zip code, how low, how often, and whe
 - ⬜ **Not yet shipped to production** — the schema (`zip_boundaries` table + index) and loaded zip data are live in production Postgres, but the new `api` routes only exist in this checkout; deploying them means a real image build/push/rollout (`k8s/push-ecr.sh` + `kubectl rollout restart`, or via the GitHub Actions `deploy.yml` on push to `main`), deliberately not done without a separate go-ahead.
 - ⬜ **No frontend yet** — backend/API scope only for this pass, by design (see conversation history for the scoping decision). A neighborhood-picker + hour-of-day chart is the natural next step once the API is live.
 
-## 14. Airport Departures/Arrivals Board (v2 — not yet built)
+## 14. Airport Departures/Arrivals Board (v2 — built)
 
-Status: fully specced below, nothing built. Depends on nothing new — this is the FIDS board data §12 already fetches, exposed as its own view instead of staying an internal join key.
+Status: built per the spec below. Depended on nothing new — this is the FIDS board data §12 already fetches, exposed as its own view instead of staying an internal join key.
+
+**Build status:**
+- ✅ **API route** — `api/src/routes/airports.ts`, registered in `api/src/index.ts`. `GET /airports/:icao/board?direction=departure|arrival` reads `fids_flights` directly (no new ingestion-side work), ordered by `COALESCE(revised_time, scheduled_time) ASC`. Same `{ max: 20, timeWindow: "1 minute" }` rate-limit override as the other analytics routes.
+- ✅ **Frontend** — `AirportBoardPanel.tsx` (same `Panel`/`PanelHeader` shell as `TrafficVolumePanel`): airport picker (5 regional fields) + departures/arrivals toggle, polled every 60s (a board reflects "right now", unlike the traffic/noise panels' slower aggregates). Wired into the `IconRail` in `App.tsx`.
+- ⬜ **Deep link** (`/airport/:icao` in `useUrlRoute.ts`) — not built. Noted in the original spec as "a cheap addition once the route table has a third case," not required for v1 of this feature; left for a follow-up pass alongside the aircraft/neighborhood deep links.
 
 Goal: a live departures/arrivals list per regional airport, the standard "airport board" view every spotter/tracker site has — currently the closest thing this app has is `attachRoutes.ts` silently consuming the same data to label individual aircraft.
 

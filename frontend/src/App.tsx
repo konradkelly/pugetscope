@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Bell, Circle, ClipboardList, Plane, TrendingUp, Volume2 } from "lucide-react";
+import { Bell, Circle, ClipboardList, Plane, TicketsPlane, TrendingUp, Volume2 } from "lucide-react";
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
+import { AirportBoardPanel } from "./components/AirportBoardPanel.js";
 import { AlertsPanel } from "./components/AlertsPanel.js";
 import { AuthPanel } from "./components/AuthPanel.js";
 import { IconRail, type RailItem } from "./components/IconRail.js";
@@ -13,7 +14,7 @@ import { useAircraftFeed } from "./lib/useAircraftFeed.js";
 import { useUrlRoute } from "./lib/useUrlRoute.js";
 import { api, type CurrentUser } from "./lib/api.js";
 
-type RailPanelId = "legend" | "traffic" | "noise" | "spotting" | "alerts";
+type RailPanelId = "legend" | "traffic" | "board" | "noise" | "spotting" | "alerts";
 
 export default function App() {
   const { aircraft, connected } = useAircraftFeed();
@@ -46,6 +47,7 @@ export default function App() {
   const railItems: RailItem[] = [
     { id: "legend", icon: Plane, label: "Aircraft type legend" },
     { id: "traffic", icon: TrendingUp, label: "Traffic volume" },
+    { id: "board", icon: TicketsPlane, label: "Airport board" },
     { id: "noise", icon: Volume2, label: "Neighborhood noise" },
     // Always visible, unlike the spotting log — this is specifically the
     // logged-out-facing engagement feature (device-scoped, no account).
@@ -132,6 +134,9 @@ export default function App() {
           )}
           {activeRailPanel === "traffic" && (
             <TrafficVolumePanel onClose={() => setActiveRailPanel(null)} />
+          )}
+          {activeRailPanel === "board" && (
+            <AirportBoardPanel onClose={() => setActiveRailPanel(null)} />
           )}
           {activeRailPanel === "noise" && (
             <NeighborhoodAnalyticsPanel

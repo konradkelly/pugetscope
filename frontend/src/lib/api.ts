@@ -92,6 +92,24 @@ export interface RegionTraffic {
   hourly: TrafficHour[];
 }
 
+export type AirportBoardDirection = "departure" | "arrival";
+
+export interface AirportBoardFlight {
+  callSign: string;
+  flightNumber: string | null;
+  airlineName: string | null;
+  status: string | null;
+  other: { icao: string | null; iata: string | null; name: string | null };
+  scheduledTime: string | null;
+  revisedTime: string | null;
+}
+
+export interface AirportBoard {
+  airport: string;
+  departures: AirportBoardFlight[];
+  arrivals: AirportBoardFlight[];
+}
+
 export interface SpottingResult {
   id: number;
   icao24: string;
@@ -193,6 +211,11 @@ export const api = {
 
   getRegionTraffic: (days: number) =>
     request<RegionTraffic>(`/analytics/traffic/region?days=${days}`),
+
+  getAirportBoard: (icao: string, direction?: AirportBoardDirection) =>
+    request<AirportBoard>(
+      `/airports/${icao}/board${direction ? `?direction=${direction}` : ""}`,
+    ),
 
   me: () => request<CurrentUser>("/auth/me"),
 

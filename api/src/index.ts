@@ -8,6 +8,7 @@ import { authRoutes } from "./routes/auth.js";
 import { aircraftRoutes } from "./routes/aircraft.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { trafficRoutes } from "./routes/traffic.js";
+import { airportsRoutes } from "./routes/airports.js";
 import { spottingsRoutes } from "./routes/spottings.js";
 import { alertsRoutes } from "./routes/alerts.js";
 
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   await app.register(aircraftRoutes);
   await app.register(analyticsRoutes);
   await app.register(trafficRoutes);
+  await app.register(airportsRoutes);
   await app.register(spottingsRoutes);
   await app.register(alertsRoutes);
 
