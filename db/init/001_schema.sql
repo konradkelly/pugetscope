@@ -49,6 +49,30 @@ CREATE INDEX IF NOT EXISTS positions_position_gist_idx
 CREATE INDEX IF NOT EXISTS positions_recorded_at_idx
   ON positions (recorded_at);
 
+-- Pre-aggregated daily/hourly flight counts per airport (+ 'REGION' for the
+-- whole coverage area), maintained incrementally by ingestion
+-- (src/db/trafficRollup.ts) so api/src/routes/traffic.ts never has to
+-- COUNT(DISTINCT ...) over the full `positions` table per request — see
+-- docs/Region-wide-traffic-totals.md and the timeout incident it followed.
+CREATE TABLE IF NOT EXISTS traffic_daily_counts (
+  scope TEXT NOT NULL CHECK (scope IN ('KSEA','KPAE','KBFI','KRNT','KTIW','REGION')),
+  date DATE NOT NULL,
+  flights INTEGER NOT NULL,
+  PRIMARY KEY (scope, date)
+);
+
+-- Separate from traffic_daily_counts rather than derived from it: an
+-- aircraft seen across 2 hours legitimately contributes to both hours'
+-- counts but only once to the day's total, so summing hourly rows for a day
+-- can exceed that day's daily total (see docs/Region-wide-traffic-totals.md).
+CREATE TABLE IF NOT EXISTS traffic_hourly_counts (
+  scope TEXT NOT NULL CHECK (scope IN ('KSEA','KPAE','KBFI','KRNT','KTIW','REGION')),
+  date DATE NOT NULL,
+  hour SMALLINT NOT NULL,
+  flights INTEGER NOT NULL,
+  PRIMARY KEY (scope, date, hour)
+);
+
 CREATE TABLE IF NOT EXISTS user_preferences (
   user_id UUID NOT NULL REFERENCES users(id),
   key TEXT NOT NULL,

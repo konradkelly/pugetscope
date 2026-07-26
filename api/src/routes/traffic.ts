@@ -1,19 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/postgres.js";
 
-// Duplicated from ingestion/src/enrichment/regionalAirports.ts rather than
-// shared — services are independently deployable with no shared package, and
-// this list is small/stable (see docs/SPEC.md §3). Radii match the
-// approach-envelope sizing rationale there: KSEA gets a long corridor, small
-// GA fields a tight one, so a flight near KBFI/KRNT isn't wrongly pulled into
-// SEA's much larger circle only by virtue of `WHERE`-clause ordering (it can
-// still legitimately count toward both, since the two circles do overlap).
+// icao/iata/name only — the airport list's lat/lon/radius live in
+// ingestion/src/enrichment/regionalAirports.ts, which is what actually
+// computes these routes' underlying numbers now (see trafficRollup.ts).
+// This file just validates the `airport` param and labels the response.
 const REGIONAL_AIRPORTS = [
-  { icao: "KSEA", iata: "SEA", name: "Seattle-Tacoma Intl", lat: 47.4502, lon: -122.3088, radiusKm: 25 },
-  { icao: "KPAE", iata: "PAE", name: "Paine Field", lat: 47.9063, lon: -122.2816, radiusKm: 15 },
-  { icao: "KBFI", iata: "BFI", name: "Boeing Field", lat: 47.53, lon: -122.3019, radiusKm: 12 },
-  { icao: "KRNT", iata: "RNT", name: "Renton Municipal", lat: 47.4931, lon: -122.216, radiusKm: 8 },
-  { icao: "KTIW", iata: "TIW", name: "Tacoma Narrows", lat: 47.2679, lon: -122.5776, radiusKm: 8 },
+  { icao: "KSEA", iata: "SEA", name: "Seattle-Tacoma Intl" },
+  { icao: "KPAE", iata: "PAE", name: "Paine Field" },
+  { icao: "KBFI", iata: "BFI", name: "Boeing Field" },
+  { icao: "KRNT", iata: "RNT", name: "Renton Municipal" },
+  { icao: "KTIW", iata: "TIW", name: "Tacoma Narrows" },
 ] as const;
 
 const MAX_LOOKBACK_DAYS = 90;
@@ -28,17 +25,17 @@ function clampDays(days: string | undefined): number {
 
 interface HourRow {
   hour: number;
-  flights: string;
+  flights: number;
 }
 
 interface DayOfWeekRow {
   dow: number;
-  flights: string;
+  flights: number;
 }
 
 interface DailyRow {
   date: string;
-  flights: string;
+  flights: number;
 }
 
 // The last `days` calendar dates (YYYY-MM-DD, America/Los_Angeles), ascending,
@@ -56,52 +53,45 @@ function recentDates(days: number): string[] {
 }
 
 export async function trafficRoutes(app: FastifyInstance): Promise<void> {
-  // Per-airport totals for the lookback window — the "split by airport"
-  // comparison (KSEA vs. the 4 regional fields). "Flights" = distinct
-  // (icao24, calendar day) pairs within the airport's approach-envelope
-  // radius, same proxy the neighborhood-overflight endpoint uses (see
-  // analytics.ts) to avoid the ~30s poll cadence inflating the count.
-  //
-  // One query per airport run concurrently, rather than one combined
-  // ST_DWithin/GROUP BY across all 5 circles: the combined form forces
-  // Postgres to materialize and hash-dedupe the full multi-airport,
-  // multi-week row set before it can emit a single count, which is what was
-  // timing out at days=30. Splitting doesn't shrink the total row count, but
-  // each query now only has to dedupe its own airport's rows, and they run
-  // in parallel instead of back-to-back.
+  // All 3 routes below read from traffic_daily_counts/traffic_hourly_counts
+  // (see db/init/001_schema.sql) rather than scanning `positions` directly.
+  // Those rollup tables are maintained incrementally by ingestion
+  // (src/db/trafficRollup.ts) — this used to run COUNT(DISTINCT ...) over
+  // the full `positions` table per request, which blew Postgres's
+  // statement_timeout once the lookback window covered the whole table (see
+  // docs/Region-wide-traffic-totals.md for the incident and the rollup
+  // design that replaced it).
+
   app.get<{ Querystring: { days?: string } }>(
     "/analytics/traffic/airports",
     { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const lookbackDays = clampDays(request.query.days);
+      const dates = recentDates(lookbackDays);
 
-      const results = await Promise.all(
-        REGIONAL_AIRPORTS.map((a) =>
-          pool.query<{ flights: string }>(
-            `SELECT COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-             FROM positions p
-             WHERE ST_DWithin(p.position, ST_MakePoint($1, $2)::geography, $3)
-               AND p.recorded_at >= now() - ($4 || ' days')::interval`,
-            [a.lon, a.lat, a.radiusKm * 1000, lookbackDays],
-          ),
-        ),
+      const result = await pool.query<{ scope: string; flights: number }>(
+        `SELECT scope, SUM(flights)::int AS flights
+         FROM traffic_daily_counts
+         WHERE scope = ANY($1) AND date BETWEEN $2 AND $3
+         GROUP BY scope`,
+        [REGIONAL_AIRPORTS.map((a) => a.icao), dates[0], dates[dates.length - 1]],
       );
 
-      const airports = REGIONAL_AIRPORTS.map((a, i) => ({
+      // Map, not positional zip: GROUP BY + = ANY() doesn't guarantee row
+      // order matches the input list, and a scope with zero matching rows
+      // (e.g. no traffic yet) won't appear in the result at all.
+      const byScope = new Map(result.rows.map((r) => [r.scope, Number(r.flights)]));
+      const airports = REGIONAL_AIRPORTS.map((a) => ({
         icao: a.icao,
         iata: a.iata,
         name: a.name,
-        flights: Number(results[i].rows[0]?.flights ?? 0),
+        flights: byScope.get(a.icao) ?? 0,
       }));
 
       return reply.send({ lookbackDays, airports });
     },
   );
 
-  // Hour-of-day and day-of-week breakdown for one airport — "flights/hour"
-  // and "day-of-week patterns". Both totaled (not averaged) over the
-  // lookback window, matching the neighborhood-overflight endpoint's
-  // convention.
   app.get<{ Querystring: { airport?: string; days?: string } }>(
     "/analytics/traffic/volume",
     { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
@@ -113,37 +103,28 @@ export async function trafficRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       const lookbackDays = clampDays(request.query.days);
-      const radiusM = airport.radiusKm * 1000;
+      const dates = recentDates(lookbackDays);
+      const [startDate, endDate] = [dates[0], dates[dates.length - 1]];
 
       const [totalResult, hourlyResult, dowResult] = await Promise.all([
-        // Separate from the hourly sum below: a flight spanning multiple
-        // hour buckets would otherwise get counted once per bucket.
-        pool.query<{ flights: string }>(
-          `SELECT COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-           FROM positions p
-           WHERE ST_DWithin(p.position, ST_MakePoint($1, $2)::geography, $3)
-             AND p.recorded_at >= now() - ($4 || ' days')::interval`,
-          [airport.lon, airport.lat, radiusM, lookbackDays],
+        pool.query<{ flights: number }>(
+          `SELECT SUM(flights)::int AS flights FROM traffic_daily_counts
+           WHERE scope = $1 AND date BETWEEN $2 AND $3`,
+          [airport.icao, startDate, endDate],
         ),
         pool.query<HourRow>(
-          `SELECT
-             EXTRACT(HOUR FROM p.recorded_at AT TIME ZONE 'America/Los_Angeles')::int AS hour,
-             COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-           FROM positions p
-           WHERE ST_DWithin(p.position, ST_MakePoint($1, $2)::geography, $3)
-             AND p.recorded_at >= now() - ($4 || ' days')::interval
+          `SELECT hour, SUM(flights)::int AS flights FROM traffic_hourly_counts
+           WHERE scope = $1 AND date BETWEEN $2 AND $3
            GROUP BY hour`,
-          [airport.lon, airport.lat, radiusM, lookbackDays],
+          [airport.icao, startDate, endDate],
         ),
+        // Postgres EXTRACT(DOW) is 0=Sunday..6=Saturday.
         pool.query<DayOfWeekRow>(
-          `SELECT
-             EXTRACT(DOW FROM p.recorded_at AT TIME ZONE 'America/Los_Angeles')::int AS dow,
-             COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-           FROM positions p
-           WHERE ST_DWithin(p.position, ST_MakePoint($1, $2)::geography, $3)
-             AND p.recorded_at >= now() - ($4 || ' days')::interval
+          `SELECT EXTRACT(DOW FROM date)::int AS dow, SUM(flights)::int AS flights
+           FROM traffic_daily_counts
+           WHERE scope = $1 AND date BETWEEN $2 AND $3
            GROUP BY dow`,
-          [airport.lon, airport.lat, radiusM, lookbackDays],
+          [airport.icao, startDate, endDate],
         ),
       ]);
 
@@ -154,7 +135,6 @@ export async function trafficRoutes(app: FastifyInstance): Promise<void> {
       }));
 
       const byDow = new Map(dowResult.rows.map((r) => [r.dow, Number(r.flights)]));
-      // Postgres EXTRACT(DOW) is 0=Sunday..6=Saturday.
       const dayOfWeek = Array.from({ length: 7 }, (_, dow) => ({
         dow,
         flights: byDow.get(dow) ?? 0,
@@ -172,50 +152,36 @@ export async function trafficRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Region-wide totals — "what this app fully covers" as a whole, not
-  // per-airport. Unlike the routes above, no ST_DWithin/spatial filter: the
-  // ingestion bbox (see ingestion/src/config.ts) already scopes every row in
-  // `positions` to the Puget Sound coverage area, and the airport circles
-  // overlap so summing their per-airport totals would double-count aircraft
-  // near multiple fields.
   app.get<{ Querystring: { days?: string } }>(
     "/analytics/traffic/region",
     { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const lookbackDays = clampDays(request.query.days);
+      const dates = recentDates(lookbackDays);
+      const [startDate, endDate] = [dates[0], dates[dates.length - 1]];
 
       const [totalResult, dailyResult, hourlyResult] = await Promise.all([
-        pool.query<{ flights: string }>(
-          `SELECT COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-           FROM positions p
-           WHERE p.recorded_at >= now() - ($1 || ' days')::interval`,
-          [lookbackDays],
+        pool.query<{ flights: number }>(
+          `SELECT SUM(flights)::int AS flights FROM traffic_daily_counts
+           WHERE scope = 'REGION' AND date BETWEEN $1 AND $2`,
+          [startDate, endDate],
         ),
-        // Day is already fixed by the GROUP BY, so distinct icao24 alone is
-        // enough to dedupe the poll cadence here (unlike the total/hourly
-        // queries, which span multiple days and need the day concatenated
-        // into the dedup key).
         pool.query<DailyRow>(
-          `SELECT to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD') AS date,
-                  COUNT(DISTINCT p.icao24) AS flights
-           FROM positions p
-           WHERE p.recorded_at >= now() - ($1 || ' days')::interval
-           GROUP BY date`,
-          [lookbackDays],
+          `SELECT to_char(date, 'YYYY-MM-DD') AS date, flights
+           FROM traffic_daily_counts
+           WHERE scope = 'REGION' AND date BETWEEN $1 AND $2`,
+          [startDate, endDate],
         ),
         pool.query<HourRow>(
-          `SELECT
-             EXTRACT(HOUR FROM p.recorded_at AT TIME ZONE 'America/Los_Angeles')::int AS hour,
-             COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-           FROM positions p
-           WHERE p.recorded_at >= now() - ($1 || ' days')::interval
+          `SELECT hour, SUM(flights)::int AS flights FROM traffic_hourly_counts
+           WHERE scope = 'REGION' AND date BETWEEN $1 AND $2
            GROUP BY hour`,
-          [lookbackDays],
+          [startDate, endDate],
         ),
       ]);
 
       const byDate = new Map(dailyResult.rows.map((r) => [r.date, Number(r.flights)]));
-      const daily = recentDates(lookbackDays).map((date) => ({
+      const daily = dates.map((date) => ({
         date,
         flights: byDate.get(date) ?? 0,
       }));

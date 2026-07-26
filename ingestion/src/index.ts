@@ -2,10 +2,42 @@ import "dotenv/config";
 import { config } from "./config.js";
 import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
 import { writeLatestPositions } from "./db/redis.js";
-import { insertPositions } from "./db/postgres.js";
+import { insertPositions, pool } from "./db/postgres.js";
+import { refreshTrafficRollup } from "./db/trafficRollup.js";
 import { attachRoutes } from "./enrichment/attachRoutes.js";
 import { attachAircraftType } from "./enrichment/attachAircraftType.js";
 import { startFidsRefreshWorker } from "./enrichment/fidsRefreshWorker.js";
+
+// Same UTC-anchored LA-date approach as api/src/routes/traffic.ts's
+// recentDates() (not shared — see that file's REGIONAL_AIRPORTS comment on
+// the project's per-service duplication convention).
+function todayLA(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+}
+
+function yesterdayLA(): string {
+  const [y, m, d] = todayLA().split("-").map(Number);
+  const yesterday = new Date(Date.UTC(y, m - 1, d) - 86_400_000);
+  return `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
+}
+
+// Guards against overlapping refreshes stacking up connection usage across
+// poll cycles if Postgres is briefly slow — a skipped cycle just catches up
+// on the next one, since refreshTrafficRollup always redoes today+yesterday.
+let rollupRefreshInFlight = false;
+
+function triggerTrafficRollupRefresh(): void {
+  if (rollupRefreshInFlight) {
+    console.warn("[ingestion] skipping rollup refresh — previous cycle still in flight");
+    return;
+  }
+  rollupRefreshInFlight = true;
+  refreshTrafficRollup(pool, [todayLA(), yesterdayLA()])
+    .catch((err) => console.error("[ingestion] rollup refresh failed:", err))
+    .finally(() => {
+      rollupRefreshInFlight = false;
+    });
+}
 
 async function pollOnce(): Promise<void> {
   const states = await fetchPugetSoundStates();
@@ -15,6 +47,10 @@ async function pollOnce(): Promise<void> {
   // history (insertPositions) doesn't need routes, so it uses the raw
   // states and runs in parallel.
   const [routed] = await Promise.all([attachRoutes(states), insertPositions(states)]);
+  // Fire-and-forget: refreshes traffic_daily_counts/traffic_hourly_counts
+  // from today's freshly-written positions. Never awaited — a slow/failed
+  // rollup query must not delay the live position/Redis write path below.
+  triggerTrafficRollupRefresh();
   // Typecode lookup runs after insertPositions (which upserts new icao24
   // rows) rather than in parallel with it, so a first-ever-seen aircraft's
   // own upsert isn't racing this read — not that it matters for typecode
