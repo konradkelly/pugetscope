@@ -89,28 +89,40 @@ async function upsertHourly(
   );
 }
 
+// Small window (poll-loop's "today + yesterday" case): tight enough to
+// never meaningfully hold a pooled connection, since ingestion's pool has no
+// `max` set (pg defaults to 10, shared with insertPositions's writes).
+const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000;
+
 // Recomputes traffic_daily_counts/traffic_hourly_counts for the given
 // (contiguous) LA calendar dates, for every airport + the region-wide scope.
 // Throws on failure — callers decide whether/how to swallow that (the poll
 // loop logs and moves on; the one-time backfill script wants a real exit
 // code).
 //
+// `statementTimeoutMs` defaults to a tight safety net sized for the small
+// incremental case above — the one-time backfill script (potentially dozens
+// of historical dates in one range) must pass a much larger value, or its
+// first query past 5s gets cancelled exactly like the original per-request
+// `positions` scans this migration exists to replace.
+//
 // Invariant: nothing besides this function and the poll loop's "today +
 // yesterday" call ever re-touches a date's rollup. Any future code path that
 // inserts historical `positions` rows (a replay tool, a manual backfill,
 // etc.) must also re-run this for those dates, or their rollups go stale.
-export async function refreshTrafficRollup(pool: pg.Pool, dates: string[]): Promise<void> {
+export async function refreshTrafficRollup(
+  pool: pg.Pool,
+  dates: string[],
+  statementTimeoutMs: number = DEFAULT_STATEMENT_TIMEOUT_MS,
+): Promise<void> {
   if (dates.length === 0) return;
   const { start, end } = utcRangeForLaDates(dates);
 
   const client = await pool.connect();
   try {
-    // Safety net: a single reserved client for the whole refresh keeps this
-    // to one pool connection (ingestion's pool has no `max` set — pg
-    // defaults to 10, shared with insertPositions's writes), and a short
-    // statement_timeout bounds worst-case connection hold time even though
-    // each query here is already scoped to a small date range.
-    await client.query("SET statement_timeout = 5000");
+    // A single reserved client for the whole refresh keeps this to one pool
+    // connection regardless of statementTimeoutMs.
+    await client.query(`SET statement_timeout = ${statementTimeoutMs}`);
     for (const rollupScope of ROLLUP_SCOPES) {
       await upsertDaily(client, rollupScope, start, end);
       await upsertHourly(client, rollupScope, start, end);

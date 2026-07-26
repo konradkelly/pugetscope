@@ -40,7 +40,11 @@ async function backfill(): Promise<void> {
 
   const dates = allLaDatesBetween(minDate, todayLA);
   console.log(`[backfill-rollup] backfilling ${dates.length} date(s): ${minDate} through ${todayLA}`);
-  await refreshTrafficRollup(pool, dates);
+  // Generous timeout vs. the poll loop's 5s default: this is a one-time,
+  // manually-run, watched operation covering a much wider date range than
+  // the incremental "today + yesterday" case, so each query needs more room.
+  const BACKFILL_STATEMENT_TIMEOUT_MS = 120_000;
+  await refreshTrafficRollup(pool, dates, BACKFILL_STATEMENT_TIMEOUT_MS);
   console.log("[backfill-rollup] done");
 }
 
