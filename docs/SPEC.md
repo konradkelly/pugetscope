@@ -21,11 +21,11 @@ Target audience: public multi-user web app — real accounts, not just a persona
 
 ### Explicitly out of scope for v1 (candidates for v2+)
 - **Flight routing enrichment** (origin/destination + self-computed ETA per aircraft) — fully designed, see §12. First v2 feature to build.
-- Airport departures/arrivals dashboard (needs a schedule data source, separate integration) — partially unblocked already: FIDS (§12) already pulls this data for route-matching, just not surfaced as its own public-facing view.
-- Flight playback/replay — the `positions` table has been accumulating full history (position/altitude/speed/heading per aircraft per poll) since ingestion went live; this is a query/UI problem against data already collected, not a new integration.
+- Airport departures/arrivals dashboard (needs a schedule data source, separate integration) — partially unblocked already: FIDS (§12) already pulls this data for route-matching, just not surfaced as its own public-facing view. Fully specced, not yet built; see §14.
+- Flight playback/replay — the `positions` table has been accumulating full history (position/altitude/speed/heading per aircraft per poll) since ingestion went live; this is a query/UI problem against data already collected, not a new integration. Fully specced, not yet built; see §16.
 - Noise/overflight analytics by neighborhood — buckets overflights by neighborhood/zip polygon × time-of-day × altitude, using data already in `positions`. No new data source needed. First v2+ feature after routing; see §13.
-- Traffic volume analytics — flights/hour, busiest times of day, day-of-week patterns, split by airport (KSEA vs. the 4 regional fields). Same `positions` table, aggregate rather than per-neighborhood.
-- Runway/flow-direction inference — which configuration SEA is using right now, inferred from approach/departure headings already in `positions`. Feeds both the noise-analytics angle and general spotter interest.
+- Traffic volume analytics — flights/hour, busiest times of day, day-of-week patterns, split by airport (KSEA vs. the 4 regional fields). Same `positions` table, aggregate rather than per-neighborhood. Built — see `api/src/routes/traffic.ts`, `TrafficVolumePanel.tsx`, and `docs/rollup-tables.md` for the pre-aggregation design this ended up needing.
+- Runway/flow-direction inference — which configuration SEA is using right now, inferred from approach/departure headings already in `positions`. Feeds both the noise-analytics angle and general spotter interest. Fully specced, not yet built; see §15.
 - Aircraft/airline mix stats — busiest operator this week, rarest type spotted; leaderboard-flavored, builds on the reference-data enrichment already built (registration/manufacturer/model/operator, `ingestion/src/enrichment/`).
 - Boeing Spotter Mode / rare-aircraft notifications
 - Personal spotting log (auth-gated) — auto-confirmed against real ADS-B data rather than self-reported. The actual payoff for having real accounts (§6), which currently authenticate users into nothing.
@@ -242,3 +242,78 @@ Goal: answer "what flew over this specific zip code, how low, how often, and whe
 - ✅ **Verified against real production data**, not just mocked: spatial join results line up with known local geography — 98188 (SeaTac, adjacent to the runways) shows 100–330 overflights/hour at 46–1200m; 98108 (Beacon Hill, directly under SEA's north-flow corridor) is the busiest zip observed, with altitudes dipping slightly negative during several hours (WGS84 ellipsoidal height near sea level in a region where the geoid dips below the ellipsoid — expected near-runway-threshold behavior, not a bug); 98146 (Burien) shows far fewer intersecting positions, mostly cruise-altitude traffic, under the runway configuration active during the sample window.
 - ⬜ **Not yet shipped to production** — the schema (`zip_boundaries` table + index) and loaded zip data are live in production Postgres, but the new `api` routes only exist in this checkout; deploying them means a real image build/push/rollout (`k8s/push-ecr.sh` + `kubectl rollout restart`, or via the GitHub Actions `deploy.yml` on push to `main`), deliberately not done without a separate go-ahead.
 - ⬜ **No frontend yet** — backend/API scope only for this pass, by design (see conversation history for the scoping decision). A neighborhood-picker + hour-of-day chart is the natural next step once the API is live.
+
+## 14. Airport Departures/Arrivals Board (v2 — not yet built)
+
+Status: fully specced below, nothing built. Depends on nothing new — this is the FIDS board data §12 already fetches, exposed as its own view instead of staying an internal join key.
+
+Goal: a live departures/arrivals list per regional airport, the standard "airport board" view every spotter/tracker site has — currently the closest thing this app has is `attachRoutes.ts` silently consuming the same data to label individual aircraft.
+
+**What already exists.** `fids_flights` (`db/init/001_schema.sql`) is kept current by `ingestion/src/enrichment/fidsRefreshWorker.ts`: KSEA refreshed every 5 min, the other 4 regional fields every 10 min, each fetch spanning roughly `now - 3h` to `now + 9h`. `ingestion/src/db/fidsFlights.ts`'s `replaceBoard()` does a full `DELETE` + re-`INSERT` per airport on every refresh (not a merge) specifically so the table always exactly reflects the current AeroDataBox window — a flight that fell out of the 12h window disappears from the table on the next refresh, nothing needs to be swept separately. That means the table is *already* board-shaped: no extra staleness filtering needed at read time, just a `SELECT ... ORDER BY`.
+
+**New API route** — `api/src/routes/airports.ts` (new file, registered in `api/src/index.ts` alongside the others):
+
+```
+GET /airports/:icao/board?direction=departure|arrival
+```
+
+- `:icao` validated against a local `REGIONAL_AIRPORTS` list (icao/iata/name only) — mirrors the const already duplicated in `traffic.ts` rather than importing from `ingestion`, per this repo's no-shared-package convention (`docs/rollup-tables.md`).
+- `direction` optional; omitted returns both. Response:
+  ```json
+  {
+    "airport": "KSEA",
+    "departures": [{ "callSign", "flightNumber", "airlineName", "status", "other": {"icao","iata","name"}, "scheduledTime", "revisedTime" }],
+    "arrivals": [...]
+  }
+  ```
+- Ordered by `COALESCE(revised_time, scheduled_time) ASC` — soonest first, the natural "board" order. No separate handling for already-departed/landed flights: they stay in the table until they age out of AeroDataBox's window, and the existing `status` field (AeroDataBox-provided: scheduled/departed/landed/delayed/etc.) is what the frontend uses to visually distinguish them, rather than the API filtering rows out.
+- `AERODATABOX_API_KEY` unset (FIDS disabled, per §12) → `fids_flights` stays empty → the route returns empty arrays, not an error. Same graceful-degradation posture as routing's tier-2 fallback.
+- Rate limit: same `{ max: 20, timeWindow: "1 minute" }` override as the other read-heavy analytics routes.
+
+**Frontend.** A new rail panel (`AirportBoardPanel.tsx`, same `Panel`/`PanelHeader` shell as `TrafficVolumePanel`): airport picker (5 regional fields) + a departures/arrivals toggle, list rows showing time, other-end airport, status. Natural follow-on once this exists: extend the deep-link scheme (§6 engagement work — `useUrlRoute.ts`) with `/airport/:icao` so a specific field's board is shareable, the same way `/aircraft/:icao24` and `/neighborhood/:zip` already are — not required for v1 of this feature, just a cheap addition once the route table has a third case.
+
+## 15. Runway/Flow-Direction Indicator (v2 — not yet built)
+
+Status: fully specced below, nothing built.
+
+Goal: surface which runway configuration a regional field — SEA above all — is currently using, e.g. "North Flow (landing 34L)" vs. "South Flow (landing 16R)". Real aviation terminology (what ATIS/spotters actually say), inferred purely from geometry already being observed — no new data source, and it feeds both general spotter interest and the noise-analytics angle (§13): which zips are getting overflown depends heavily on which flow direction is active.
+
+**Inference approach.** `ingestion/src/enrichment/regionalAirports.ts`'s `inferFlightPhase()` already detects, per poll, which aircraft are geometrically on approach to (or departing) a regional field — proximity + altitude-vs-distance envelope + vertical rate. It currently discards heading once phase is known; flow-direction inference is the same detection, plus classifying the aircraft's `trueTrack` against the field's actual runway orientation.
+
+This needs one new piece of static reference data: each regional field's runway heading pair. Runway numbers *are* headings (rounded to the nearest 10°, e.g. "runway 34" ≈ 340° magnetic), so this is real, look-up-able data, not something to infer — SEA's parallel runways are the well-known 16/34 pair (~160°/340°); the other 4 fields' orientations need pulling from their FAA airport diagrams before this is built, not assumed. Proposed shape, extending `REGIONAL_AIRPORTS`:
+
+```ts
+{ icao: "KSEA", ..., runwayHeadings: [162, 342] as const } // verify exact headings per field before building
+```
+
+Per poll, for each field: take every aircraft `inferFlightPhase` currently calls `"landing"` there, bucket its `trueTrack` against whichever of the field's two headings it's circularly closer to, and majority-vote across however many are landing in that poll. Arrivals only for v1 (departures follow the same flow but reasoning about which runway-half a departure used adds ambiguity not worth it for a first pass) — noted as a possible v1.1 refinement, not required.
+
+**Why a rolling window, not just the instantaneous poll.** A single ~30s poll can easily have zero aircraft on approach to a given field at that exact moment, especially the smaller GA fields — using only the current poll would flap between a real reading and "unknown" every time there's a gap. Keep a short in-memory rolling buffer per field in `ingestion` (last ~15–20 min of landing-phase heading observations), and compute the majority vote over that window instead of the single latest poll. In-memory only, not persisted — a service restart just means a brief "unknown" until fresh samples accumulate, the same class of intentionally-ephemeral state the frontend's own flight trails already are (`AircraftMap.tsx`'s `trailsRef`).
+
+**Where the result lives.** Written to Redis per poll — `airport:flow:{icao}` → `{ runway, headingDeg, confidence: "high"|"low"|"unknown", sampleSize, asOf }`, short TTL (e.g. 10 min) so a stale reading self-clears if ingestion stops. New API route `GET /airports/:icao/flow` reads that key straight from Redis (mirrors `aircraft.ts`'s `/aircraft` route reading `aircraft:latest:*`) — deliberately *not* pushed through the WebSocket `/live` feed: flow direction changes on the order of hours, not seconds, so poll-on-demand (fetch when a panel/badge is visible, refresh every minute or so) fits better than adding a push path for something this slow-moving.
+
+**Frontend.** Lowest-friction option: a small glanceable badge near the existing live/connected status pill (bottom-left) — "SEA: North Flow (rwy 34)" — no click required, matching the "ambient, no interaction needed" framing that fits a fact like this. A rail panel showing all 5 fields at once is a natural secondary option if a single SEA-only badge feels too narrow once built.
+
+## 16. Historical Playback/Replay (v2 — not yet built)
+
+Status: fully specced below, nothing built. Per §2: "a query/UI problem against data already collected, not a new integration" — `positions` has been accumulating full history since ingestion went live, so this is new `api` routes + frontend UI only, nothing touches `ingestion` or the live WebSocket feed.
+
+Goal: scrub back through recent history and watch the region's traffic replay — "what flew over 2 hours ago."
+
+**The constraint this has to respect.** This project has already hit, and documented, exactly the failure mode a naive version of this feature would repeat: `docs/Region-wide-traffic-totals.md` and `docs/rollup-tables.md` cover a real incident where an *unselective* query against `positions` (a wide date range aggregated with no other predicate — up to 90 days, effectively the whole table) blew Postgres's 30s `statement_timeout` even with the right indexes in place, because an index only helps when the predicate excludes most of the table — aggregating almost all of it is a cost no index removes. Replay is different in kind, not just degree: it never aggregates a wide window, it fetches raw rows for one *narrow* time slice at a time (a single scrubber frame, seconds to low minutes wide) — inherently selective by construction, as long as the API is designed so a request can never ask for more than that. The existing `positions_icao24_recorded_at_idx` and `positions_recorded_at_idx` (added for exactly this table, see `docs/postgres-btree-indexing.md`) already cover this access pattern; no new index should be needed.
+
+**Two new `api` routes** (new file, e.g. `api/src/routes/replay.ts`):
+
+```
+GET /replay/bounds
+```
+`{ earliest: ISO, latest: ISO }` — `MIN(recorded_at)` / `MAX(recorded_at)` over all of `positions`, so the frontend scrubber knows the full available range. Safe despite touching "all of positions" in the query text: `MIN`/`MAX` over a B-tree-indexed column is an index-only scan reading one end of the tree, not a table scan — a different cost profile from the `COUNT(DISTINCT ...)` that caused the earlier incident, worth calling out explicitly since it looks superficially similar.
+
+```
+GET /replay/frame?at=<ISO>&windowSeconds=90
+```
+Returns each aircraft's most recent known position within `[at - windowSeconds, at]` — one row per `icao24`, via `DISTINCT ON (icao24) ... WHERE recorded_at BETWEEN $1 AND $2 ORDER BY icao24, recorded_at DESC`, the same "narrow, sargable range on the raw column" shape `trafficRollup.ts` already established works well against this table. `windowSeconds` small and capped server-side (e.g. max a few minutes) — the caller picks *when*, not *how much*, so a request can't accidentally turn into a wide scan. No new index needed per above.
+
+**A real gap worth stating rather than glossing over** (matching how §12 calls out its own "Remaining gap"): `positions` only stores `icao24, callsign, position, altitude, ground_speed, heading, vertical_speed, recorded_at` — no `typecode`, `category`, or `route`. Those are enrichment fields attached only to the *live* Redis blob (`ingestion/src/enrichment/attachAircraftType.ts`, `attachRoutes.ts`), never persisted per position row. A replayed frame can still join `positions.icao24` against the static `aircraft` reference table for registration/manufacturer/model/operator (that part *is* stored and joinable), but a replayed aircraft has no `category`/`typecode` to size/shape its marker by, and no route/ETA — it renders with the default "unknown type" marker and no route panel content. Accepted limitation for v1, not solved here.
+
+**Frontend.** Rather than a small side panel like the other rail features, replay changes what the *map itself* shows, so it's better framed as a mode toggle for the whole app: a "Replay" toggle (rail item) that swaps the map's data source from the live `useAircraftFeed()` hook to a new `useReplayFeed()` hook (polls `/replay/frame` on a timer as the scrubber advances, converts each frame into the same `AircraftByIcao` shape `useAircraftFeed` already produces) and surfaces a scrubber bar (slider + play/pause + speed: 1x/5x/20x) at the bottom of the screen while active. `AircraftMap.tsx` needs no changes to render replayed traffic — it already only cares about receiving an `AircraftByIcao`-shaped `aircraft` prop, not where it came from; `App.tsx` just decides which hook currently feeds it.
