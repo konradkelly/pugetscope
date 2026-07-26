@@ -8,6 +8,11 @@ metadata:
     # just one — kept in its own Ingress so it doesn't also rewrite /live
     # (see pugetscope-app below) via its empty capture group.
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Above the pg pool's statement_timeout (30s, see api/src/db/postgres.ts)
+    # so a slow analytics query gets to return its own error response instead
+    # of nginx's default 60s read timeout cutting it off with a bare 504 —
+    # that default is exactly what surfaced the traffic/airports timeout.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "35"
 spec:
   ingressClassName: nginx
   rules:

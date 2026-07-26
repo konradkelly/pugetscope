@@ -291,8 +291,12 @@ export function TrafficVolumePanel({ onClose }: Props) {
       {!totalsError && (
         <div className="mt-3 space-y-1">
           {(totals ?? AIRPORT_OPTIONS.map((o) => ({ icao: o.icao, iata: "", name: "", flights: 0 }))).map((a) => {
+            // Guard against a null/missing count from a degraded response —
+            // the array itself is null-checked above, but an individual
+            // entry's `flights` isn't guaranteed non-null by the wire format.
+            const flights = a.flights ?? 0;
             const isSelected = a.icao === airport;
-            const widthPct = totals ? Math.max((a.flights / maxAirportFlights) * 100, a.flights > 0 ? 2 : 0) : 0;
+            const widthPct = totals ? Math.max((flights / maxAirportFlights) * 100, flights > 0 ? 2 : 0) : 0;
             return (
               <button
                 key={a.icao}
@@ -309,7 +313,7 @@ export function TrafficVolumePanel({ onClose }: Props) {
                   />
                 </span>
                 <span className="w-10 shrink-0 text-right text-xs text-gray-500">
-                  {totals ? a.flights.toLocaleString() : ""}
+                  {totals ? flights.toLocaleString() : ""}
                 </span>
               </button>
             );

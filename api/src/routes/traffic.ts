@@ -26,11 +26,6 @@ function clampDays(days: string | undefined): number {
   return Math.min(Math.max(Number(days) || 30, 1), MAX_LOOKBACK_DAYS);
 }
 
-interface AirportTotalRow {
-  icao: string;
-  flights: string;
-}
-
 interface HourRow {
   hour: number;
   flights: string;
@@ -66,33 +61,37 @@ export async function trafficRoutes(app: FastifyInstance): Promise<void> {
   // (icao24, calendar day) pairs within the airport's approach-envelope
   // radius, same proxy the neighborhood-overflight endpoint uses (see
   // analytics.ts) to avoid the ~30s poll cadence inflating the count.
+  //
+  // One query per airport run concurrently, rather than one combined
+  // ST_DWithin/GROUP BY across all 5 circles: the combined form forces
+  // Postgres to materialize and hash-dedupe the full multi-airport,
+  // multi-week row set before it can emit a single count, which is what was
+  // timing out at days=30. Splitting doesn't shrink the total row count, but
+  // each query now only has to dedupe its own airport's rows, and they run
+  // in parallel instead of back-to-back.
   app.get<{ Querystring: { days?: string } }>(
     "/analytics/traffic/airports",
     { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const lookbackDays = clampDays(request.query.days);
 
-      const result = await pool.query<AirportTotalRow>(
-        `SELECT a.icao,
-                COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
-         FROM (VALUES ${REGIONAL_AIRPORTS.map((_, i) => `($${i * 4 + 2}, $${i * 4 + 3}::double precision, $${i * 4 + 4}::double precision, $${i * 4 + 5}::double precision)`).join(", ")})
-                 AS a(icao, lon, lat, radius_m)
-         LEFT JOIN positions p
-           ON ST_DWithin(p.position, ST_MakePoint(a.lon, a.lat)::geography, a.radius_m)
-           AND p.recorded_at >= now() - ($1 || ' days')::interval
-         GROUP BY a.icao`,
-        [
-          lookbackDays,
-          ...REGIONAL_AIRPORTS.flatMap((a) => [a.icao, a.lon, a.lat, a.radiusKm * 1000]),
-        ],
+      const results = await Promise.all(
+        REGIONAL_AIRPORTS.map((a) =>
+          pool.query<{ flights: string }>(
+            `SELECT COUNT(DISTINCT p.icao24 || '-' || to_char(p.recorded_at AT TIME ZONE 'America/Los_Angeles', 'YYYY-MM-DD')) AS flights
+             FROM positions p
+             WHERE ST_DWithin(p.position, ST_MakePoint($1, $2)::geography, $3)
+               AND p.recorded_at >= now() - ($4 || ' days')::interval`,
+            [a.lon, a.lat, a.radiusKm * 1000, lookbackDays],
+          ),
+        ),
       );
 
-      const byIcao = new Map(result.rows.map((r) => [r.icao, Number(r.flights)]));
-      const airports = REGIONAL_AIRPORTS.map((a) => ({
+      const airports = REGIONAL_AIRPORTS.map((a, i) => ({
         icao: a.icao,
         iata: a.iata,
         name: a.name,
-        flights: byIcao.get(a.icao) ?? 0,
+        flights: Number(results[i].rows[0]?.flights ?? 0),
       }));
 
       return reply.send({ lookbackDays, airports });
