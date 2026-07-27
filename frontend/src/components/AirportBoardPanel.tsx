@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type AirportBoardDirection, type AirportBoardFlight } from "../lib/api.js";
 import { Panel, PanelHeader } from "./Panel.js";
 
@@ -102,6 +102,36 @@ export function AirportBoardPanel({ onClose, initialAirport, onAirportChange }: 
 
   const flights = direction === "departure" ? departures : arrivals;
 
+  // Board rows span the AeroDataBox window's full ~3h-past-to-9h-future
+  // range (see docs/SPEC.md §12), so opening the panel would otherwise land
+  // on already-departed/landed flights from hours ago. Jump to "now" by
+  // default — the first still-upcoming row — once per (airport, direction)
+  // selection, so it doesn't fight a user who's deliberately scrolled up to
+  // see earlier flights while a background poll refreshes the data.
+  const listRef = useRef<HTMLDivElement>(null);
+  const scrolledToNowRef = useRef(false);
+
+  useEffect(() => {
+    scrolledToNowRef.current = false;
+  }, [airport, direction]);
+
+  useEffect(() => {
+    if (scrolledToNowRef.current || !flights || flights.length === 0 || !listRef.current) return;
+    scrolledToNowRef.current = true;
+
+    const now = Date.now();
+    const upcomingIndex = flights.findIndex((f) => {
+      const t = f.revisedTime ?? f.scheduledTime;
+      return t ? new Date(t).getTime() >= now : false;
+    });
+    // -1 (everything already in the past) or 0 (nothing past to skip) both
+    // mean there's no scrolling to do.
+    if (upcomingIndex <= 0) return;
+
+    const row = listRef.current.children[upcomingIndex] as HTMLElement | undefined;
+    if (row) listRef.current.scrollTop = row.offsetTop;
+  }, [flights]);
+
   return (
     <Panel className="w-[420px] p-4">
       <PanelHeader
@@ -156,7 +186,7 @@ export function AirportBoardPanel({ onClose, initialAirport, onAirportChange }: 
             </p>
           )}
           {flights !== null && flights.length > 0 && (
-            <div className="max-h-80 overflow-y-auto">
+            <div ref={listRef} className="max-h-80 overflow-y-auto">
               {flights.map((f) => (
                 <BoardRow key={`${f.callSign}-${f.scheduledTime}`} flight={f} direction={direction} />
               ))}
