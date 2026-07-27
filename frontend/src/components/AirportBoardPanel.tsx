@@ -4,6 +4,8 @@ import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   onClose: () => void;
+  initialAirport?: string;
+  onAirportChange?: (icao: string) => void;
 }
 
 interface AirportOption {
@@ -12,7 +14,7 @@ interface AirportOption {
 }
 
 // Same 5 Puget Sound regional fields as TrafficVolumePanel — see docs/SPEC.md §3.
-const AIRPORT_OPTIONS: AirportOption[] = [
+export const AIRPORT_OPTIONS: AirportOption[] = [
   { icao: "KSEA", label: "KSEA — Sea-Tac Intl" },
   { icao: "KPAE", label: "KPAE — Paine Field" },
   { icao: "KBFI", label: "KBFI — Boeing Field" },
@@ -56,9 +58,15 @@ function BoardRow({ flight, direction }: { flight: AirportBoardFlight; direction
   );
 }
 
-export function AirportBoardPanel({ onClose }: Props) {
-  const [airport, setAirport] = useState(AIRPORT_OPTIONS[0].icao);
+export function AirportBoardPanel({ onClose, initialAirport, onAirportChange }: Props) {
+  const isValidAirport = initialAirport && AIRPORT_OPTIONS.some((opt) => opt.icao === initialAirport);
+  const [airport, setAirport] = useState(isValidAirport ? initialAirport : AIRPORT_OPTIONS[0].icao);
   const [direction, setDirection] = useState<AirportBoardDirection>("departure");
+
+  function selectAirport(next: string) {
+    setAirport(next);
+    onAirportChange?.(next);
+  }
 
   const [departures, setDepartures] = useState<AirportBoardFlight[] | null>(null);
   const [arrivals, setArrivals] = useState<AirportBoardFlight[] | null>(null);
@@ -105,7 +113,7 @@ export function AirportBoardPanel({ onClose }: Props) {
       <div className="mt-3 flex gap-2">
         <select
           value={airport}
-          onChange={(e) => setAirport(e.target.value)}
+          onChange={(e) => selectAirport(e.target.value)}
           className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm"
         >
           {AIRPORT_OPTIONS.map((opt) => (

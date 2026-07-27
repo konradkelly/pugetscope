@@ -3,7 +3,7 @@ import { Bell, Circle, ClipboardList, Plane, TicketsPlane, TrendingUp, Volume2 }
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
-import { AirportBoardPanel } from "./components/AirportBoardPanel.js";
+import { AirportBoardPanel, AIRPORT_OPTIONS } from "./components/AirportBoardPanel.js";
 import { AlertsPanel } from "./components/AlertsPanel.js";
 import { AuthPanel } from "./components/AuthPanel.js";
 import { FlowBadge } from "./components/FlowBadge.js";
@@ -25,18 +25,22 @@ export default function App() {
   );
   const [user, setUser] = useState<CurrentUser | null>(null);
   // Legend open by default so marker size/shape is explained on first load —
-  // unless the page was loaded from a shared neighborhood link, in which case
-  // that's what the visitor came to see. Everything else starts collapsed,
-  // same as before this was a rail.
+  // unless the page was loaded from a shared neighborhood/airport link, in
+  // which case that's what the visitor came to see. Everything else starts
+  // collapsed, same as before this was a rail.
   const [activeRailPanel, setActiveRailPanel] = useState<RailPanelId | null>(
-    route.type === "neighborhood" ? "noise" : "legend",
+    route.type === "neighborhood" ? "noise" : route.type === "airport" ? "board" : "legend",
   );
   // Tracked independently of the URL so the neighborhood panel's current zip
   // survives switching away and back (e.g. to look at an aircraft) — the URL
-  // itself can only represent one of {aircraft, neighborhood} at a time,
-  // aircraft taking priority.
+  // itself can only represent one of {aircraft, neighborhood, airport} at a
+  // time, aircraft taking priority.
   const [neighborhoodZip, setNeighborhoodZip] = useState<string>(
     route.type === "neighborhood" ? route.zip : ZIP_OPTIONS[0].zip,
+  );
+  // Same idea as neighborhoodZip, for the airport board's currently-selected field.
+  const [boardIcao, setBoardIcao] = useState<string>(
+    route.type === "airport" ? route.icao : AIRPORT_OPTIONS[0].icao,
   );
   const [pinDropArmed, setPinDropArmed] = useState(false);
   const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
@@ -56,6 +60,14 @@ export default function App() {
     ...(user ? [{ id: "spotting", icon: ClipboardList, label: "My spotting log" } as const] : []),
   ];
 
+  // Shared by closeAircraftDetail/toggleRailPanel below — the URL for
+  // whichever rail panel is (about to be) active, home otherwise.
+  function pathForRailPanel(panel: RailPanelId | null): string {
+    if (panel === "noise") return `/neighborhood/${neighborhoodZip}`;
+    if (panel === "board") return `/airport/${boardIcao}`;
+    return "/";
+  }
+
   function selectAircraft(icao24: string) {
     setSelectedIcao24(icao24);
     navigate(`/aircraft/${icao24}`);
@@ -63,7 +75,7 @@ export default function App() {
 
   function closeAircraftDetail() {
     setSelectedIcao24(null);
-    navigate(activeRailPanel === "noise" ? `/neighborhood/${neighborhoodZip}` : "/");
+    navigate(pathForRailPanel(activeRailPanel));
   }
 
   function toggleRailPanel(id: string) {
@@ -71,9 +83,7 @@ export default function App() {
       const next = current === id ? null : (id as RailPanelId);
       // An open aircraft detail panel keeps the URL pointed at that aircraft
       // regardless of which rail panel is also open alongside it.
-      if (!selectedIcao24) {
-        navigate(next === "noise" ? `/neighborhood/${neighborhoodZip}` : "/");
-      }
+      if (!selectedIcao24) navigate(pathForRailPanel(next));
       // Leaving the alerts panel mid-pin-drop should also disarm it rather
       // than leaving the map stuck in crosshair mode with no visible panel.
       if (next !== "alerts") setPinDropArmed(false);
@@ -84,6 +94,11 @@ export default function App() {
   function changeNeighborhoodZip(zip: string) {
     setNeighborhoodZip(zip);
     if (!selectedIcao24) navigate(`/neighborhood/${zip}`);
+  }
+
+  function changeBoardIcao(icao: string) {
+    setBoardIcao(icao);
+    if (!selectedIcao24) navigate(`/airport/${icao}`);
   }
 
   return (
@@ -140,7 +155,11 @@ export default function App() {
             <TrafficVolumePanel onClose={() => setActiveRailPanel(null)} />
           )}
           {activeRailPanel === "board" && (
-            <AirportBoardPanel onClose={() => setActiveRailPanel(null)} />
+            <AirportBoardPanel
+              onClose={() => toggleRailPanel("board")}
+              initialAirport={boardIcao}
+              onAirportChange={changeBoardIcao}
+            />
           )}
           {activeRailPanel === "noise" && (
             <NeighborhoodAnalyticsPanel
