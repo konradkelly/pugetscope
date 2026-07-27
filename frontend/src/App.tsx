@@ -6,6 +6,7 @@ import { AircraftLegend } from "./components/AircraftLegend.js";
 import { AirportBoardPanel } from "./components/AirportBoardPanel.js";
 import { AlertsPanel } from "./components/AlertsPanel.js";
 import { AuthPanel } from "./components/AuthPanel.js";
+import { FlowBadge } from "./components/FlowBadge.js";
 import { IconRail, type RailItem } from "./components/IconRail.js";
 import { NeighborhoodAnalyticsPanel, ZIP_OPTIONS } from "./components/NeighborhoodAnalyticsPanel.js";
 import { TrafficVolumePanel } from "./components/TrafficVolumePanel.js";
@@ -112,9 +113,12 @@ export default function App() {
         />
       )}
 
-      <div className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
-        <Circle size={8} className={connected ? "fill-green-500 text-green-500" : "fill-red-500 text-red-500"} />
-        {connected ? "live" : "reconnecting…"} · {aircraft.size} aircraft
+      <div className="absolute bottom-4 left-4 flex items-end gap-2">
+        <div className="flex items-center gap-1.5 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
+          <Circle size={8} className={connected ? "fill-green-500 text-green-500" : "fill-red-500 text-red-500"} />
+          {connected ? "live" : "reconnecting…"} · {aircraft.size} aircraft
+        </div>
+        <FlowBadge />
       </div>
 
       {/* Single dock replacing the four independently-positioned corner

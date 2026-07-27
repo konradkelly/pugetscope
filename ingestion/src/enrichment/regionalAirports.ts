@@ -11,12 +11,38 @@ import type { StateVector } from "../openskyClient.js";
 // Southwest 737 at 1105m). So the major field (KSEA) gets a long corridor,
 // Boeing-widebody fields a medium one, and small GA fields a tight one that
 // only captures genuinely-local low traffic.
+// `runwayHeadings`/`runwayLabels` are for flow-direction inference (docs/SPEC.md
+// §15) — the two ends of each field's primary landing runway. Headings are
+// TRUE (not magnetic), sourced from each field's FAA 5010 data via AirNav
+// (airnav.com/airport/<ICAO>), matched against ADS-B trueTrack rather than
+// runway-number magnetic convention. Magnetic/true divergence (~15-16°E in
+// Puget Sound) doesn't matter for classification here: the two ends are 180°
+// apart, so bucketing "closer to end A or end B" tolerates far more than a
+// 15° bias. Parallel runways (e.g. SEA's 16L/16C/16R) aren't disambiguated —
+// this only infers which numbered runway/direction is in use, not which
+// specific parallel strip, matching regionalAirports' own approach-envelope
+// approximation elsewhere in this file.
 export const REGIONAL_AIRPORTS = [
-  { icao: "KSEA", iata: "SEA", name: "Seattle-Tacoma Intl", lat: 47.4502, lon: -122.3088, approachRadiusKm: 25 },
-  { icao: "KPAE", iata: "PAE", name: "Paine Field", lat: 47.9063, lon: -122.2816, approachRadiusKm: 15 },
-  { icao: "KBFI", iata: "BFI", name: "Boeing Field", lat: 47.53, lon: -122.3019, approachRadiusKm: 12 },
-  { icao: "KRNT", iata: "RNT", name: "Renton Municipal", lat: 47.4931, lon: -122.216, approachRadiusKm: 8 },
-  { icao: "KTIW", iata: "TIW", name: "Tacoma Narrows", lat: 47.2679, lon: -122.5776, approachRadiusKm: 8 },
+  {
+    icao: "KSEA", iata: "SEA", name: "Seattle-Tacoma Intl", lat: 47.4502, lon: -122.3088, approachRadiusKm: 25,
+    runwayHeadings: [180, 0] as const, runwayLabels: ["16", "34"] as const,
+  },
+  {
+    icao: "KPAE", iata: "PAE", name: "Paine Field", lat: 47.9063, lon: -122.2816, approachRadiusKm: 15,
+    runwayHeadings: [180, 0] as const, runwayLabels: ["16", "34"] as const,
+  },
+  {
+    icao: "KBFI", iata: "BFI", name: "Boeing Field", lat: 47.53, lon: -122.3019, approachRadiusKm: 12,
+    runwayHeadings: [150, 330] as const, runwayLabels: ["14", "32"] as const,
+  },
+  {
+    icao: "KRNT", iata: "RNT", name: "Renton Municipal", lat: 47.4931, lon: -122.216, approachRadiusKm: 8,
+    runwayHeadings: [174, 354] as const, runwayLabels: ["16", "34"] as const,
+  },
+  {
+    icao: "KTIW", iata: "TIW", name: "Tacoma Narrows", lat: 47.2679, lon: -122.5776, approachRadiusKm: 8,
+    runwayHeadings: [187, 7] as const, runwayLabels: ["17", "35"] as const,
+  },
 ] as const;
 
 export function getRegionalAirport(icao: string) {

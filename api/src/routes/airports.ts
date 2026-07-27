@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/postgres.js";
+import { redis } from "../db/redis.js";
 
 // icao/iata/name only, same convention (and same 5 fields) as traffic.ts —
 // this repo's no-shared-package convention (docs/rollup-tables.md) means
@@ -79,4 +80,29 @@ export async function airportsRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ airport: airport.icao, departures, arrivals });
     },
   );
+
+  // Which runway/flow direction a regional field is currently using,
+  // inferred purely from observed approach geometry — see docs/SPEC.md §15
+  // and ingestion/src/enrichment/flowDirection.ts. Reads airport:flow:{icao}
+  // straight from Redis (mirrors aircraft.ts's /aircraft reading
+  // aircraft:latest:*) — deliberately not pushed through the WebSocket
+  // /live feed, since this changes on the order of hours, not seconds.
+  app.get<{ Params: { icao: string } }>("/airports/:icao/flow", async (request, reply) => {
+    const airport = findAirport(request.params.icao);
+    if (!airport) {
+      return reply.code(400).send({
+        error: `icao must be one of: ${REGIONAL_AIRPORTS.map((a) => a.icao).join(", ")}`,
+      });
+    }
+
+    const raw = await redis.get(`airport:flow:${airport.icao}`);
+    // No key yet (ingestion hasn't run, or the TTL lapsed) is a normal,
+    // graceful-degradation state here, not an error — same posture as the
+    // board route returning empty arrays when FIDS isn't configured.
+    const reading = raw
+      ? JSON.parse(raw)
+      : { runway: null, flow: null, headingDeg: null, confidence: "unknown", sampleSize: 0, asOf: null };
+
+    return reply.send({ airport: airport.icao, ...reading });
+  });
 }

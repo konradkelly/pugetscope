@@ -110,6 +110,16 @@ export interface AirportBoard {
   arrivals: AirportBoardFlight[];
 }
 
+export interface AirportFlow {
+  airport: string;
+  runway: string | null;
+  flow: "north" | "south" | null;
+  headingDeg: number | null;
+  confidence: "high" | "low" | "unknown";
+  sampleSize: number;
+  asOf: string | null;
+}
+
 export interface SpottingResult {
   id: number;
   icao24: string;
@@ -216,6 +226,8 @@ export const api = {
     request<AirportBoard>(
       `/airports/${icao}/board${direction ? `?direction=${direction}` : ""}`,
     ),
+
+  getAirportFlow: (icao: string) => request<AirportFlow>(`/airports/${icao}/flow`),
 
   me: () => request<CurrentUser>("/auth/me"),
 

@@ -1,12 +1,13 @@
 import "dotenv/config";
 import { config } from "./config.js";
 import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
-import { writeLatestPositions } from "./db/redis.js";
+import { writeLatestPositions, writeFlowReadings } from "./db/redis.js";
 import { insertPositions, pool } from "./db/postgres.js";
 import { refreshTrafficRollup } from "./db/trafficRollup.js";
 import { attachRoutes } from "./enrichment/attachRoutes.js";
 import { attachAircraftType } from "./enrichment/attachAircraftType.js";
 import { startFidsRefreshWorker } from "./enrichment/fidsRefreshWorker.js";
+import { recordFlowObservations, computeFlowReadings } from "./enrichment/flowDirection.js";
 
 // Same UTC-anchored LA-date approach as api/src/routes/traffic.ts's
 // recentDates() (not shared — see that file's REGIONAL_AIRPORTS comment on
@@ -56,7 +57,12 @@ async function pollOnce(): Promise<void> {
   // own upsert isn't racing this read — not that it matters for typecode
   // (enrich.ts fills that separately), but it keeps the query timing simple.
   const enriched = await attachAircraftType(routed);
-  await writeLatestPositions(enriched);
+  // Flow-direction inference (docs/SPEC.md §15): a pure in-memory rolling
+  // vote over the raw (unrouted) states, so it doesn't need to wait on
+  // anything above. Cheap enough to run in-line rather than fire-and-forget.
+  recordFlowObservations(states);
+  const flowReadings = computeFlowReadings();
+  await Promise.all([writeLatestPositions(enriched), writeFlowReadings(flowReadings)]);
 }
 
 async function main(): Promise<void> {
