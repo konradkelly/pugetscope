@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Circle, ClipboardList, Plane, TicketsPlane, TrendingUp, Volume2 } from "lucide-react";
+import { Bell, Circle, ClipboardList, History, Plane, TicketsPlane, TrendingUp, Volume2 } from "lucide-react";
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
@@ -9,16 +9,19 @@ import { AuthPanel } from "./components/AuthPanel.js";
 import { FlowBadge } from "./components/FlowBadge.js";
 import { IconRail, type RailItem } from "./components/IconRail.js";
 import { NeighborhoodAnalyticsPanel, ZIP_OPTIONS } from "./components/NeighborhoodAnalyticsPanel.js";
+import { ReplayScrubber } from "./components/ReplayScrubber.js";
 import { TrafficVolumePanel } from "./components/TrafficVolumePanel.js";
 import { SpottingLogPanel } from "./components/SpottingLogPanel.js";
 import { useAircraftFeed } from "./lib/useAircraftFeed.js";
+import { useReplayPlayback } from "./lib/useReplayPlayback.js";
 import { useUrlRoute } from "./lib/useUrlRoute.js";
+import { getPageMeta } from "./lib/pageMeta.js";
 import { api, type CurrentUser } from "./lib/api.js";
 
-type RailPanelId = "legend" | "traffic" | "board" | "noise" | "spotting" | "alerts";
+type RailPanelId = "legend" | "traffic" | "board" | "noise" | "spotting" | "alerts" | "replay";
 
 export default function App() {
-  const { aircraft, connected } = useAircraftFeed();
+  const { aircraft: liveAircraft, connected } = useAircraftFeed();
   const { route, navigate } = useUrlRoute();
   const [selectedIcao24, setSelectedIcao24] = useState<string | null>(
     route.type === "aircraft" ? route.icao24 : null,
@@ -45,15 +48,32 @@ export default function App() {
   const [pinDropArmed, setPinDropArmed] = useState(false);
   const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Replay swaps the map's whole data source (see docs/SPEC.md §16) rather
+  // than opening an overlay panel, but still rides the same exclusive
+  // activeRailPanel selection so opening it closes whatever else was open.
+  const replayMode = activeRailPanel === "replay";
+  const replay = useReplayPlayback(replayMode);
+  const aircraft = replayMode ? replay.aircraft : liveAircraft;
+
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null));
   }, []);
+
+  // Per-route title/description so each deep-linkable page (airport board,
+  // neighborhood, aircraft) is distinguishable in search results and browser
+  // tabs, not just the site-wide default from index.html.
+  useEffect(() => {
+    const meta = getPageMeta(route);
+    document.title = meta.title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", meta.description);
+  }, [route]);
 
   const railItems: RailItem[] = [
     { id: "legend", icon: Plane, label: "Aircraft type legend" },
     { id: "traffic", icon: TrendingUp, label: "Traffic volume" },
     { id: "board", icon: TicketsPlane, label: "Airport board" },
     { id: "noise", icon: Volume2, label: "Neighborhood noise" },
+    { id: "replay", icon: History, label: "Replay" },
     // Always visible, unlike the spotting log — this is specifically the
     // logged-out-facing engagement feature (device-scoped, no account).
     { id: "alerts", icon: Bell, label: "Alerts" },
@@ -125,15 +145,25 @@ export default function App() {
           live={aircraft.get(selectedIcao24)}
           user={user}
           onClose={closeAircraftDetail}
+          replay={replayMode}
         />
       )}
 
       <div className="absolute bottom-4 left-4 flex items-end gap-2">
         <div className="flex items-center gap-1.5 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
-          <Circle size={8} className={connected ? "fill-green-500 text-green-500" : "fill-red-500 text-red-500"} />
-          {connected ? "live" : "reconnecting…"} · {aircraft.size} aircraft
+          <Circle
+            size={8}
+            className={
+              replayMode
+                ? "fill-amber-500 text-amber-500"
+                : connected
+                  ? "fill-green-500 text-green-500"
+                  : "fill-red-500 text-red-500"
+            }
+          />
+          {replayMode ? "replay" : connected ? "live" : "reconnecting…"} · {aircraft.size} aircraft
         </div>
-        <FlowBadge />
+        {!replayMode && <FlowBadge />}
       </div>
 
       {/* Single dock replacing the four independently-positioned corner
@@ -179,6 +209,19 @@ export default function App() {
           )}
           {activeRailPanel === "spotting" && user && (
             <SpottingLogPanel onClose={() => setActiveRailPanel(null)} />
+          )}
+          {activeRailPanel === "replay" && (
+            <ReplayScrubber
+              bounds={replay.bounds}
+              currentMs={replay.currentMs}
+              playing={replay.playing}
+              speed={replay.speed}
+              error={replay.error}
+              onSeek={replay.seek}
+              onPlayPause={() => replay.setPlaying(!replay.playing)}
+              onSpeedChange={replay.setSpeed}
+              onClose={() => toggleRailPanel("replay")}
+            />
           )}
         </div>
       )}

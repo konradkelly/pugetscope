@@ -9,6 +9,10 @@ interface Props {
   live: StateVector | undefined;
   user: CurrentUser | null;
   onClose: () => void;
+  // True while viewing a replayed (historical) aircraft — suppresses the
+  // spotting log button, since that's meant to represent aircraft actually
+  // observed live, not backdated to a scrubbed timestamp.
+  replay?: boolean;
 }
 
 type LogState =
@@ -42,7 +46,7 @@ function formatEta(iso: string): string {
   return `${clock} (~${hours}h ${mins}m)`;
 }
 
-export function AircraftDetailPanel({ icao24, live, user, onClose }: Props) {
+export function AircraftDetailPanel({ icao24, live, user, onClose, replay }: Props) {
   const [detail, setDetail] = useState<AircraftDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logState, setLogState] = useState<LogState>({ status: "idle" });
@@ -140,7 +144,7 @@ export function AircraftDetailPanel({ icao24, live, user, onClose }: Props) {
         </dd>
       </dl>
 
-      {user && (
+      {user && !replay && (
         <div className="mt-3 border-t border-gray-100 pt-3">
           <button
             onClick={handleLogSighting}

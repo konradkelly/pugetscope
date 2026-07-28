@@ -173,6 +173,30 @@ export interface CreateCallsignWatch {
   matchValue: string;
 }
 
+export interface ReplayBounds {
+  earliest: string | null;
+  latest: string | null;
+}
+
+export interface ReplayFramePosition {
+  icao24: string;
+  callsign: string | null;
+  lat: number;
+  lon: number;
+  altitude: number | null;
+  groundSpeed: number | null;
+  headingDeg: number | null;
+  verticalSpeed: number | null;
+  recordedAt: string;
+  typecode: string | null;
+}
+
+export interface ReplayFrame {
+  at: string;
+  windowSeconds: number;
+  aircraft: ReplayFramePosition[];
+}
+
 export interface AlertWatch {
   id: number;
   kind: AlertWatchKind;
@@ -228,6 +252,13 @@ export const api = {
     ),
 
   getAirportFlow: (icao: string) => request<AirportFlow>(`/airports/${icao}/flow`),
+
+  getReplayBounds: () => request<ReplayBounds>("/replay/bounds"),
+
+  getReplayFrame: (atIso: string, windowSeconds: number) =>
+    request<ReplayFrame>(
+      `/replay/frame?at=${encodeURIComponent(atIso)}&windowSeconds=${windowSeconds}`,
+    ),
 
   me: () => request<CurrentUser>("/auth/me"),
 
