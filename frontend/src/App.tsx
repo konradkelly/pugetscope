@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Circle, ClipboardList, History, Plane, TicketsPlane, TrendingUp, Volume2 } from "lucide-react";
+import { Bell, Circle, ClipboardList, History, Plane, TicketsPlane, TrendingUp, User, Volume2 } from "lucide-react";
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
@@ -18,7 +18,7 @@ import { useUrlRoute } from "./lib/useUrlRoute.js";
 import { getPageMeta } from "./lib/pageMeta.js";
 import { api, type CurrentUser } from "./lib/api.js";
 
-type RailPanelId = "legend" | "traffic" | "board" | "noise" | "spotting" | "alerts" | "replay";
+type RailPanelId = "legend" | "traffic" | "board" | "noise" | "spotting" | "alerts" | "replay" | "auth";
 
 export default function App() {
   const { aircraft: liveAircraft, connected } = useAircraftFeed();
@@ -78,6 +78,7 @@ export default function App() {
     // logged-out-facing engagement feature (device-scoped, no account).
     { id: "alerts", icon: Bell, label: "Alerts" },
     ...(user ? [{ id: "spotting", icon: ClipboardList, label: "My spotting log" } as const] : []),
+    { id: "auth", icon: User, label: user ? user.email : "Log in / sign up", badge: !!user },
   ];
 
   // Shared by closeAircraftDetail/toggleRailPanel below — the URL for
@@ -135,10 +136,6 @@ export default function App() {
         pendingPin={droppedPin}
       />
 
-      <div className="absolute left-4 top-4">
-        <AuthPanel user={user} onAuthChange={setUser} />
-      </div>
-
       {selectedIcao24 && (
         <AircraftDetailPanel
           icao24={selectedIcao24}
@@ -167,11 +164,12 @@ export default function App() {
       </div>
 
       {/* Single dock replacing the four independently-positioned corner
-          toggles (legend/traffic/noise/spotting log) this app used to have —
-          see docs/SPEC.md §6. Bottom-anchored (like the old per-panel corner
-          buttons were) and capped well short of the viewport top so even the
-          tallest panel (traffic volume) can't grow up into AuthPanel's space
-          — vertical centering was tried first and didn't hold up there. */}
+          toggles (legend/traffic/noise/spotting log) this app used to have,
+          plus the standalone top-left AuthPanel — see docs/SPEC.md §6.
+          Bottom-anchored (like the old per-panel corner buttons were) and
+          capped well short of the viewport top so even the tallest panel
+          (traffic volume) has room to grow — vertical centering was tried
+          first and didn't hold up there. */}
       <div className="absolute bottom-12 left-4">
         <IconRail items={railItems} activeId={activeRailPanel} onSelect={toggleRailPanel} />
       </div>
@@ -222,6 +220,9 @@ export default function App() {
               onSpeedChange={replay.setSpeed}
               onClose={() => toggleRailPanel("replay")}
             />
+          )}
+          {activeRailPanel === "auth" && (
+            <AuthPanel user={user} onAuthChange={setUser} onClose={() => toggleRailPanel("auth")} />
           )}
         </div>
       )}
