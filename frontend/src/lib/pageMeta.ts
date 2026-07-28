@@ -1,0 +1,37 @@
+import { AIRPORT_OPTIONS } from "../components/AirportBoardPanel.js";
+import { ZIP_OPTIONS } from "../components/NeighborhoodAnalyticsPanel.js";
+import type { UrlRoute } from "./useUrlRoute.js";
+
+const SITE_TITLE = "PugetScope";
+const DEFAULT_TITLE = `${SITE_TITLE} — Live Puget Sound Aircraft Tracker`;
+const DEFAULT_DESCRIPTION =
+  "Track live flights over Sea-Tac, Boeing Field, and the rest of Puget Sound in real time — see per-flight details and how aircraft noise affects your neighborhood.";
+
+export function getPageMeta(route: UrlRoute): { title: string; description: string } {
+  switch (route.type) {
+    case "airport": {
+      const label = AIRPORT_OPTIONS.find((a) => a.icao === route.icao)?.label ?? route.icao;
+      return {
+        title: `${label} Live Departures & Arrivals | ${SITE_TITLE}`,
+        description: `Live departure and arrival board for ${label}, part of ${SITE_TITLE}'s real-time Puget Sound aircraft tracker.`,
+      };
+    }
+    case "neighborhood": {
+      const label = ZIP_OPTIONS.find((z) => z.zip === route.zip)?.label ?? route.zip;
+      return {
+        title: `${label} Aircraft Noise Analytics | ${SITE_TITLE}`,
+        description: `Overflight frequency and aircraft noise analytics for ${label}, tracked live by ${SITE_TITLE}.`,
+      };
+    }
+    case "aircraft": {
+      const icao24 = route.icao24.toUpperCase();
+      return {
+        title: `Aircraft ${icao24} — Live Tracking | ${SITE_TITLE}`,
+        description: `Live position and flight details for aircraft ${icao24}, tracked by ${SITE_TITLE}.`,
+      };
+    }
+    case "home":
+    default:
+      return { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };
+  }
+}
