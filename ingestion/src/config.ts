@@ -5,9 +5,22 @@ function requireEnv(name: string): string {
 }
 
 export const config = {
+  // Getters, not eagerly-evaluated properties: generateDigest.ts (and the
+  // other one-off scripts — enrich.ts, loadZips.ts, backfillTrafficRollup.ts)
+  // import this same config module just for config.postgres/config.anthropic
+  // via db/postgres.ts, and the digest-generate CronJob deliberately only
+  // gets Postgres + Anthropic env vars (it never touches OpenSky). A plain
+  // eager requireEnv() here threw on import for that pod before any of
+  // generateDigest.ts's own code ran — caught live against the real
+  // digest-generate CronJob in prod. Real ingestion (openskyClient.ts) still
+  // fails just as fast, the first time it actually reads config.opensky.*.
   opensky: {
-    clientId: requireEnv("OPENSKY_CLIENT_ID"),
-    clientSecret: requireEnv("OPENSKY_CLIENT_SECRET"),
+    get clientId() {
+      return requireEnv("OPENSKY_CLIENT_ID");
+    },
+    get clientSecret() {
+      return requireEnv("OPENSKY_CLIENT_SECRET");
+    },
     tokenUrl:
       "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token",
     statesUrl: "https://opensky-network.org/api/states/all",
