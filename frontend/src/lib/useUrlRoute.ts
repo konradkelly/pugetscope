@@ -4,11 +4,13 @@ export type UrlRoute =
   | { type: "aircraft"; icao24: string }
   | { type: "neighborhood"; zip: string }
   | { type: "airport"; icao: string }
+  | { type: "digest"; date: string }
   | { type: "home" };
 
 const AIRCRAFT_RE = /^\/aircraft\/([0-9a-fA-F]{6})$/;
 const NEIGHBORHOOD_RE = /^\/neighborhood\/(\d{5})$/;
 const AIRPORT_RE = /^\/airport\/([A-Za-z]{4})$/;
+const DIGEST_RE = /^\/digest\/(\d{4}-\d{2}-\d{2})$/;
 
 function parseRoute(pathname: string): UrlRoute {
   const aircraftMatch = pathname.match(AIRCRAFT_RE);
@@ -19,6 +21,9 @@ function parseRoute(pathname: string): UrlRoute {
 
   const airportMatch = pathname.match(AIRPORT_RE);
   if (airportMatch) return { type: "airport", icao: airportMatch[1].toUpperCase() };
+
+  const digestMatch = pathname.match(DIGEST_RE);
+  if (digestMatch) return { type: "digest", date: digestMatch[1] };
 
   return { type: "home" };
 }

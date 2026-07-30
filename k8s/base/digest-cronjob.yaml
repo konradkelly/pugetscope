@@ -1,0 +1,53 @@
+# Nightly AI daily-digest generation (docs/SPEC.md digest feature) — reuses
+# the ingestion image (ingestion/src/generateDigest.ts is already compiled
+# into its dist/ by that image's normal build), no new image to maintain.
+# Only talks to Postgres + the Anthropic HTTPS API, so — unlike
+# ecr-refresh-cronjob.yaml — this needs no ServiceAccount/RBAC against the
+# k8s API itself.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: digest-generate
+  namespace: pugetscope
+spec:
+  # 10:00 UTC ≈ 2-3am Pacific (DST-dependent) — comfortably after LA
+  # midnight either way, so "yesterday" (generateDigest.ts's yesterdayLA())
+  # is always a fully-elapsed day with complete traffic_daily_counts by the
+  # time this fires.
+  schedule: "0 10 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generate
+              image: pugetscope/ingestion:latest
+              # Explicit, not left to the default — the ec2 overlay's images:
+              # transformer rewrites this to the mutable :ec2-latest tag, and
+              # Kubernetes only defaults imagePullPolicy: Always for the
+              # literal tag "latest" (the same gotcha already hit once for
+              # the app Deployments' own ECR pulls — see docs/SPEC.md).
+              imagePullPolicy: Always
+              command: ["node", "dist/generateDigest.js"]
+              env:
+                - name: POSTGRES_USER
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_USER } }
+                - name: POSTGRES_PASSWORD
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_PASSWORD } }
+                - name: POSTGRES_DB
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_DB } }
+                - name: POSTGRES_HOST
+                  valueFrom: { configMapKeyRef: { name: datastore-config, key: POSTGRES_HOST } }
+                - name: POSTGRES_PORT
+                  valueFrom: { configMapKeyRef: { name: datastore-config, key: POSTGRES_PORT } }
+                - name: POSTGRES_SSL
+                  valueFrom: { configMapKeyRef: { name: datastore-config, key: POSTGRES_SSL } }
+                - name: DATABASE_URL
+                  value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+                - name: ANTHROPIC_API_KEY
+                  valueFrom: { secretKeyRef: { name: anthropic-credentials, key: ANTHROPIC_API_KEY } }

@@ -151,3 +151,21 @@ patches:
           spec:
             imagePullSecrets:
               - name: ecr-registry
+  # CronJob nests one level deeper than a Deployment (spec.jobTemplate.spec.
+  # template.spec, not spec.template.spec) — same ECR-pull requirement as the
+  # 4 Deployments above.
+  - target:
+      kind: CronJob
+      name: digest-generate
+    patch: |-
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: digest-generate
+      spec:
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                imagePullSecrets:
+                  - name: ecr-registry

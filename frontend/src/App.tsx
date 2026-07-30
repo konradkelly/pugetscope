@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Bell, Circle, ClipboardList, History, Plane, TicketsPlane, TrendingUp, User, Volume2 } from "lucide-react";
+import { Bell, Circle, ClipboardList, History, Newspaper, Plane, TicketsPlane, TrendingUp, User, Volume2 } from "lucide-react";
 import { AircraftMap } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
 import { AirportBoardPanel, AIRPORT_OPTIONS } from "./components/AirportBoardPanel.js";
 import { AlertsPanel } from "./components/AlertsPanel.js";
 import { AuthPanel } from "./components/AuthPanel.js";
+import { DigestPanel } from "./components/DigestPanel.js";
 import { FlowBadge } from "./components/FlowBadge.js";
 import { IconRail, type RailItem } from "./components/IconRail.js";
 import { NeighborhoodAnalyticsPanel, ZIP_OPTIONS } from "./components/NeighborhoodAnalyticsPanel.js";
@@ -18,7 +19,19 @@ import { useUrlRoute } from "./lib/useUrlRoute.js";
 import { getPageMeta } from "./lib/pageMeta.js";
 import { api, type CurrentUser } from "./lib/api.js";
 
-type RailPanelId = "legend" | "traffic" | "board" | "noise" | "spotting" | "alerts" | "replay" | "auth";
+type RailPanelId = "legend" | "traffic" | "board" | "noise" | "digest" | "spotting" | "alerts" | "replay" | "auth";
+
+// Mirrors ingestion/src/index.ts's todayLA()/yesterdayLA() and
+// ingestion/src/generateDigest.ts's copy — each service keeps its own, per
+// this repo's no-shared-package convention. The rail icon always links to
+// yesterday's digest; a direct /digest/:date link shows whatever date is in
+// the URL instead (see the digestDate calc in App() below).
+function yesterdayLA(): string {
+  const todayLA = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
+  const [y, m, d] = todayLA.split("-").map(Number);
+  const yesterday = new Date(Date.UTC(y, m - 1, d) - 86_400_000);
+  return `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
+}
 
 export default function App() {
   const { aircraft: liveAircraft, connected } = useAircraftFeed();
@@ -32,7 +45,13 @@ export default function App() {
   // which case that's what the visitor came to see. Everything else starts
   // collapsed, same as before this was a rail.
   const [activeRailPanel, setActiveRailPanel] = useState<RailPanelId | null>(
-    route.type === "neighborhood" ? "noise" : route.type === "airport" ? "board" : "legend",
+    route.type === "neighborhood"
+      ? "noise"
+      : route.type === "airport"
+        ? "board"
+        : route.type === "digest"
+          ? "digest"
+          : "legend",
   );
   // Tracked independently of the URL so the neighborhood panel's current zip
   // survives switching away and back (e.g. to look at an aircraft) — the URL
@@ -45,6 +64,11 @@ export default function App() {
   const [boardIcao, setBoardIcao] = useState<string>(
     route.type === "airport" ? route.icao : AIRPORT_OPTIONS[0].icao,
   );
+  // Not stateful like neighborhoodZip/boardIcao: the rail icon always points
+  // at yesterday's digest, so this is recomputed from the current route
+  // rather than remembered — a direct /digest/:date link shows that date,
+  // everything else (including reopening via the rail) shows yesterday.
+  const digestDate = route.type === "digest" ? route.date : yesterdayLA();
   const [pinDropArmed, setPinDropArmed] = useState(false);
   const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -73,6 +97,7 @@ export default function App() {
     { id: "traffic", icon: TrendingUp, label: "Traffic volume" },
     { id: "board", icon: TicketsPlane, label: "Airport board" },
     { id: "noise", icon: Volume2, label: "Neighborhood noise" },
+    { id: "digest", icon: Newspaper, label: "Daily digest" },
     { id: "replay", icon: History, label: "Replay" },
     // Always visible, unlike the spotting log — this is specifically the
     // logged-out-facing engagement feature (device-scoped, no account).
@@ -86,6 +111,7 @@ export default function App() {
   function pathForRailPanel(panel: RailPanelId | null): string {
     if (panel === "noise") return `/neighborhood/${neighborhoodZip}`;
     if (panel === "board") return `/airport/${boardIcao}`;
+    if (panel === "digest") return `/digest/${yesterdayLA()}`;
     return "/";
   }
 
@@ -207,6 +233,9 @@ export default function App() {
           )}
           {activeRailPanel === "spotting" && user && (
             <SpottingLogPanel onClose={() => setActiveRailPanel(null)} />
+          )}
+          {activeRailPanel === "digest" && (
+            <DigestPanel date={digestDate} onClose={() => toggleRailPanel("digest")} />
           )}
           {activeRailPanel === "replay" && (
             <ReplayScrubber

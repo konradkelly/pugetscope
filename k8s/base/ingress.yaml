@@ -50,6 +50,17 @@ spec:
                 name: websocket
                 port:
                   number: 3001
+          # Server-rendered digest page (api/src/routes/digest.ts) — crawlable
+          # HTML, deliberately not behind the /api(/|$)(.*) rewrite rule
+          # above (pugetscope-api), since this is a first-class page URL
+          # like /airport/:icao, not a JSON API call.
+          - path: /digest
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3000
           - path: /
             pathType: Prefix
             backend:

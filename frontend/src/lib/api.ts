@@ -197,6 +197,14 @@ export interface ReplayFrame {
   aircraft: ReplayFramePosition[];
 }
 
+export interface Digest {
+  date: string;
+  headline: string;
+  body: string;
+  metaDescription: string;
+  stats: { date: string; totalFlights: number; byAirport: Record<string, number> };
+}
+
 export interface AlertWatch {
   id: number;
   kind: AlertWatchKind;
@@ -252,6 +260,10 @@ export const api = {
     ),
 
   getAirportFlow: (icao: string) => request<AirportFlow>(`/airports/${icao}/flow`),
+
+  // Plural /digests/:date, not the crawler-facing HTML /digest/:date route —
+  // see api/src/routes/digest.ts for why the two are split.
+  getDigest: (date: string) => request<Digest>(`/digests/${date}`),
 
   getReplayBounds: () => request<ReplayBounds>("/replay/bounds"),
 

@@ -9,6 +9,7 @@ resources:
   - namespace.yaml
   - api-deployment.yaml
   - ingestion-deployment.yaml
+  - digest-cronjob.yaml
   - websocket-deployment.yaml
   - frontend-deployment.yaml
   - ingress.yaml

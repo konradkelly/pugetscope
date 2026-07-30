@@ -100,6 +100,7 @@ jobs:
           OPENSKY_CLIENT_SECRET=${{ secrets.OPENSKY_CLIENT_SECRET }}
           OPENSKY_PROXY_URL=${{ secrets.OPENSKY_PROXY_URL }}
           AERODATABOX_API_KEY=${{ secrets.AERODATABOX_API_KEY }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
           UMAMI_APP_SECRET=${{ secrets.UMAMI_APP_SECRET }}
           UMAMI_DB_PASSWORD=${{ secrets.UMAMI_DB_PASSWORD }}
           VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}

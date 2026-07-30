@@ -30,6 +30,15 @@ export function getPageMeta(route: UrlRoute): { title: string; description: stri
         description: `Live position and flight details for aircraft ${icao24}, tracked by ${SITE_TITLE}.`,
       };
     }
+    case "digest": {
+      // Generic fallback — the real headline/description are already in the
+      // server-rendered HTML crawlers see (api/src/routes/digest.ts); this
+      // just covers the client-side title once the SPA has taken over.
+      return {
+        title: `Daily Digest — ${route.date} | ${SITE_TITLE}`,
+        description: `${SITE_TITLE}'s AI-written summary of Puget Sound air traffic on ${route.date}.`,
+      };
+    }
     case "home":
     default:
       return { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };

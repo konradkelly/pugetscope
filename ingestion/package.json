@@ -10,9 +10,11 @@
     "enrich": "tsx src/enrich.ts",
     "load-zips": "tsx src/loadZips.ts",
     "backfill-rollup": "tsx src/backfillTrafficRollup.ts",
+    "generate-digest": "tsx src/generateDigest.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "csv-parse": "^7.0.1",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.1",

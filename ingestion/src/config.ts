@@ -51,4 +51,9 @@ export const config = {
     primaryRefreshIntervalMs: Number(process.env.FIDS_PRIMARY_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // fallback only; deployment sets 5 min for KSEA
     secondaryRefreshIntervalMs: Number(process.env.FIDS_SECONDARY_REFRESH_INTERVAL_MS ?? 3 * 60 * 60 * 1000), // fallback only; deployment sets 10 min for PAE/BFI/RNT/TIW
   },
+  // Optional (not requireEnv): gates generateDigest.ts, a one-off nightly
+  // script, not the always-on poll loop — same opt-in posture as aerodatabox.
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY ?? null,
+  },
 };

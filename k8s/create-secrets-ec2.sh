@@ -51,6 +51,13 @@ kubectl create secret generic aerodatabox-credentials \
   --from-literal=AERODATABOX_API_KEY="${AERODATABOX_API_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Optional — ANTHROPIC_API_KEY may be blank in secrets.env (digest-generate
+# CronJob no-ops without it, same gate as generateDigest.ts's local run).
+kubectl create secret generic anthropic-credentials \
+  --namespace pugetscope \
+  --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # Optional — both may be blank in secrets.env (push alerts disabled).
 kubectl create secret generic push-credentials \
   --namespace pugetscope \
