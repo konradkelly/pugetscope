@@ -7,6 +7,12 @@ export const pool = new pg.Pool({
   ssl: config.postgres.ssl,
 });
 
+// Without this, a network error on an idle client (e.g. RDS dropping a
+// connection) is an unhandled 'error' event and crashes the process.
+pool.on("error", (err) => {
+  console.error("[postgres] idle client error:", err);
+});
+
 export async function insertPositions(states: StateVector[]): Promise<void> {
   if (states.length === 0) return;
 

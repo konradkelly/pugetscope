@@ -9,3 +9,9 @@ export const pool = new pg.Pool({
   // tying up a pool connection until the ingress's own timeout cuts it off.
   statement_timeout: 30_000,
 });
+
+// Without this, a network error on an idle client (e.g. RDS dropping a
+// connection) is an unhandled 'error' event and crashes the process.
+pool.on("error", (err) => {
+  console.error("[postgres] idle client error:", err);
+});
