@@ -130,7 +130,7 @@ export function NeighborhoodAnalyticsPanel({ onClose, initialZip, onZipChange }:
   const hovered = hoveredHour !== null ? safeHours.find((h) => h.hour === hoveredHour) : undefined;
 
   return (
-    <Panel className="w-[420px] p-4">
+    <Panel className="w-full p-4 sm:w-[420px]">
       <PanelHeader
         title="Neighborhood noise"
         subtitle="Overflights by hour of day, Pacific time"

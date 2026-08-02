@@ -28,7 +28,7 @@ export function PanelHeader({ title, subtitle, onClose }: PanelHeaderProps) {
         <h2 className="text-lg font-semibold leading-tight">{title}</h2>
         {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
       </div>
-      <button onClick={onClose} className="shrink-0 text-gray-400 hover:text-gray-700" aria-label="Close">
+      <button onClick={onClose} className="-m-2 shrink-0 p-2 text-gray-400 hover:text-gray-700" aria-label="Close">
         <X size={16} />
       </button>
     </div>

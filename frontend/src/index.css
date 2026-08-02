@@ -10,3 +10,14 @@ body,
 body {
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
 }
+
+/* Below the `sm` breakpoint, App.tsx's icon rail becomes a full-width h-14
+   tab bar fixed to the bottom edge — MapLibre's own NavigationControl
+   (added via addControl(..., "bottom-right") in AircraftMap.tsx) doesn't
+   know about it, so it needs a matching offset to stay above the bar
+   instead of sitting behind it. */
+@media (max-width: 639px) {
+  .maplibregl-ctrl-bottom-right {
+    bottom: 64px;
+  }
+}

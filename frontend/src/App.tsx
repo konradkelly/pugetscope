@@ -163,16 +163,18 @@ export default function App() {
       />
 
       {selectedIcao24 && (
-        <AircraftDetailPanel
-          icao24={selectedIcao24}
-          live={aircraft.get(selectedIcao24)}
-          user={user}
-          onClose={closeAircraftDetail}
-          replay={replayMode}
-        />
+        <div className="fixed inset-x-0 bottom-14 z-10 max-h-[70vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:left-auto sm:z-auto sm:max-h-none">
+          <AircraftDetailPanel
+            icao24={selectedIcao24}
+            live={aircraft.get(selectedIcao24)}
+            user={user}
+            onClose={closeAircraftDetail}
+            replay={replayMode}
+          />
+        </div>
       )}
 
-      <div className="absolute bottom-4 left-4 flex items-end gap-2">
+      <div className="fixed bottom-16 left-4 z-20 flex items-end gap-2 sm:absolute sm:bottom-4 sm:z-auto">
         <div className="flex items-center gap-1.5 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
           <Circle
             size={8}
@@ -196,12 +198,12 @@ export default function App() {
           capped well short of the viewport top so even the tallest panel
           (traffic volume) has room to grow — vertical centering was tried
           first and didn't hold up there. */}
-      <div className="absolute bottom-12 left-4">
+      <div className="fixed inset-x-0 bottom-0 z-20 sm:absolute sm:inset-x-auto sm:bottom-12 sm:left-4 sm:z-auto">
         <IconRail items={railItems} activeId={activeRailPanel} onSelect={toggleRailPanel} />
       </div>
 
       {activeRailPanel && (
-        <div className="absolute bottom-12 left-20 max-h-[65vh] overflow-y-auto">
+        <div className="fixed inset-x-0 bottom-14 z-10 max-h-[70vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:bottom-12 sm:left-20 sm:z-auto sm:max-h-[65vh]">
           {activeRailPanel === "legend" && (
             <AircraftLegend onClose={() => setActiveRailPanel(null)} />
           )}

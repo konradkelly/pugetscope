@@ -17,7 +17,7 @@ export function AuthPanel({ user, onAuthChange, onClose }: Props) {
 
   if (user) {
     return (
-      <Panel className="w-64 p-3 text-sm">
+      <Panel className="w-full p-3 text-sm sm:w-64">
         <PanelHeader title="Account" onClose={onClose} />
         <div className="mt-2 flex items-center justify-between gap-3">
           <span className="truncate">{user.email}</span>
@@ -52,7 +52,7 @@ export function AuthPanel({ user, onAuthChange, onClose }: Props) {
   }
 
   return (
-    <Panel className="w-64 p-3 text-sm">
+    <Panel className="w-full p-3 text-sm sm:w-64">
       <PanelHeader title="Account" onClose={onClose} />
       <form onSubmit={handleSubmit} className="mt-2">
         <div className="mb-2 flex gap-3">

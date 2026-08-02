@@ -22,7 +22,7 @@ interface Props {
 // than letting an unbounded number of panels stack and compete for space.
 export function IconRail({ items, activeId, onSelect }: Props) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg bg-white/95 p-1.5 shadow-lg backdrop-blur">
+    <div className="flex h-14 w-full flex-row items-stretch justify-around gap-1 rounded-none bg-white/95 p-1.5 shadow-lg backdrop-blur sm:h-auto sm:w-auto sm:flex-col sm:items-stretch sm:justify-start sm:rounded-lg">
       {items.map(({ id, icon: Icon, label, badge }) => (
         <button
           key={id}
@@ -30,7 +30,7 @@ export function IconRail({ items, activeId, onSelect }: Props) {
           aria-label={label}
           aria-pressed={activeId === id}
           title={label}
-          className={`relative flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
+          className={`relative flex h-full flex-1 items-center justify-center rounded-md transition-colors sm:h-10 sm:w-10 sm:flex-none ${
             activeId === id ? "bg-sky-600 text-white" : "text-gray-600 hover:bg-gray-100"
           }`}
         >

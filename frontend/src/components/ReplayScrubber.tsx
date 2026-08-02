@@ -43,10 +43,10 @@ export function ReplayScrubber({
   const hasHistory = earliestMs !== null && latestMs !== null && currentMs !== null;
 
   return (
-    <Panel className="w-[560px] p-3">
+    <Panel className="w-full p-3 sm:w-[560px]">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-gray-900">Replay</span>
-        <button onClick={onClose} className="shrink-0 text-gray-400 hover:text-gray-700" aria-label="Exit replay">
+        <button onClick={onClose} className="-m-2 shrink-0 p-2 text-gray-400 hover:text-gray-700" aria-label="Exit replay">
           <X size={16} />
         </button>
       </div>

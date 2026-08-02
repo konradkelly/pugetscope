@@ -100,7 +100,7 @@ export function AlertsPanel({ onClose, pinDropArmed, onArmPinDrop, droppedPin, o
   }
 
   return (
-    <Panel className="w-80 p-4">
+    <Panel className="w-full p-4 sm:w-80">
       <PanelHeader
         title="Alerts"
         subtitle="Notify this browser — no account needed"
@@ -219,7 +219,7 @@ export function AlertsPanel({ onClose, pinDropArmed, onArmPinDrop, droppedPin, o
               <button
                 onClick={() => handleDelete(w.id)}
                 aria-label="Delete alert"
-                className="shrink-0 text-gray-400 hover:text-red-600"
+                className="-m-2 shrink-0 p-2 text-gray-400 hover:text-red-600"
               >
                 <Trash2 size={14} />
               </button>

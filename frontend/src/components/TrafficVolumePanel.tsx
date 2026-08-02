@@ -238,7 +238,7 @@ export function TrafficVolumePanel({ onClose }: Props) {
   const maxAirportFlights = niceMax(Math.max(1, ...(totals ?? []).map((a) => a.flights)));
 
   return (
-    <Panel className="w-[460px] p-4">
+    <Panel className="w-full p-4 sm:w-[460px]">
       <PanelHeader
         title="Traffic volume"
         subtitle="Aircraft near each field, by hour, day, and airport"

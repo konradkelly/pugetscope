@@ -85,7 +85,7 @@ export function AircraftDetailPanel({ icao24, live, user, onClose, replay }: Pro
   const route = live?.route;
 
   return (
-    <Panel className="absolute right-4 top-4 w-72 p-4">
+    <Panel className="w-full p-4 sm:w-72">
       <PanelHeader
         title={live?.callsign?.trim() || icao24}
         subtitle={route?.airline}

@@ -29,7 +29,7 @@ export function DigestPanel({ date, onClose }: Props) {
   }, [date]);
 
   return (
-    <Panel className="w-[420px] p-4">
+    <Panel className="w-full p-4 sm:w-[420px]">
       <PanelHeader title="Daily digest" subtitle={date} onClose={onClose} />
 
       {error && <p className="mt-3 text-sm text-red-600">{error}</p>}

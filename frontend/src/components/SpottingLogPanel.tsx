@@ -76,7 +76,7 @@ export function SpottingLogPanel({ onClose }: Props) {
   }
 
   return (
-    <Panel className="w-80 p-4">
+    <Panel className="w-full p-4 sm:w-80">
       <PanelHeader
         title="My spotting log"
         subtitle={
@@ -128,7 +128,7 @@ export function SpottingLogPanel({ onClose }: Props) {
                       <li key={s.id}>
                         <button
                           onClick={() => handleDelete(e.icao24, s.id)}
-                          className="flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-[11px] text-gray-500 transition-colors hover:bg-gray-100"
+                          className="flex w-full items-center justify-between gap-2 rounded px-1 py-1.5 text-[11px] text-gray-500 transition-colors hover:bg-gray-100"
                           title="Click to delete this spotting"
                           aria-label={`Delete sighting from ${formatDate(s.spottedAt)}`}
                         >

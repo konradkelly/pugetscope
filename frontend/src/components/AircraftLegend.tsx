@@ -7,7 +7,7 @@ interface Props {
 
 export function AircraftLegend({ onClose }: Props) {
   return (
-    <Panel className="w-56 p-3 text-sm">
+    <Panel className="w-full p-3 text-sm sm:w-56">
       <PanelHeader title="Aircraft type" onClose={onClose} />
       <ul className="mt-2 flex flex-col gap-1.5">
         {AIRCRAFT_CLASSES.map((cls) => (

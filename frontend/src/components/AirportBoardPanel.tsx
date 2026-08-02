@@ -133,7 +133,7 @@ export function AirportBoardPanel({ onClose, initialAirport, onAirportChange }: 
   }, [flights]);
 
   return (
-    <Panel className="w-[420px] p-4">
+    <Panel className="w-full p-4 sm:w-[420px]">
       <PanelHeader
         title="Airport board"
         subtitle="Live departures and arrivals for each regional field"
