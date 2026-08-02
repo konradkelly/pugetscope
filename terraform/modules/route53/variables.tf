@@ -16,3 +16,13 @@ variable "google_site_verification" {
   type        = string
   default     = null
 }
+
+variable "ses_verification_token" {
+  description = "module.ses's verification_token output."
+  type        = string
+}
+
+variable "ses_dkim_tokens" {
+  description = "module.ses's dkim_tokens output — always exactly 3 tokens (AWS SES's Easy DKIM)."
+  type        = list(string)
+}

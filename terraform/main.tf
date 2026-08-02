@@ -47,6 +47,12 @@ module "elasticache" {
   node_type          = var.redis_node_type
 }
 
+module "ses" {
+  source = "./modules/ses"
+
+  domain_name = var.domain_name
+}
+
 module "iam" {
   source = "./modules/iam"
 
@@ -54,6 +60,7 @@ module "iam" {
   github_repo          = var.github_repo
   state_bucket_arn     = local.state_bucket_arn
   readable_secret_arns = [module.rds.secret_arn]
+  ses_identity_arn     = module.ses.identity_arn
 }
 
 module "ec2" {
@@ -78,4 +85,6 @@ module "route53" {
   domain_name              = var.domain_name
   ingress_ip               = module.ec2.ingress_public_ip
   google_site_verification = "Ul7RkU4cZu2EfQWZy1OuoK6JzTEkL1YSluc96"
+  ses_verification_token   = module.ses.verification_token
+  ses_dkim_tokens          = module.ses.dkim_tokens
 }

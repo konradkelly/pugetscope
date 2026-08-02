@@ -107,6 +107,8 @@ patches:
                 env:
                   - name: CORS_ORIGIN
                     value: https://pugetscope.com
+                  - name: SES_FROM_EMAIL
+                    value: noreply@pugetscope.com
   - target:
       kind: Deployment
       name: websocket

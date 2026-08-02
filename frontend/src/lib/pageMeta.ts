@@ -49,6 +49,13 @@ export function getPageMeta(route: UrlRoute): { title: string; description: stri
         title: `Puget Sound Air Traffic Overview | ${SITE_TITLE}`,
         description: `Region-wide flight volume across Sea-Tac, Paine Field, Boeing Field, Renton, and Tacoma Narrows, tracked live by ${SITE_TITLE}.`,
       };
+    case "resetPassword":
+      // Deliberately generic — nothing token- or account-specific belongs
+      // in a page title/description for a single-use, 30-minute-lived URL.
+      return {
+        title: `Reset Password | ${SITE_TITLE}`,
+        description: `Reset your ${SITE_TITLE} account password.`,
+      };
     case "home":
     default:
       return { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };

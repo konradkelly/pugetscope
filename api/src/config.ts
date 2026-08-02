@@ -20,4 +20,12 @@ export const config = {
     secureCookie: process.env.NODE_ENV === "production",
   },
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  email: {
+    // Optional, not requireEnv — mirrors ingestion/src/config.ts's
+    // AERODATABOX_API_KEY gating: unset means "not configured for this
+    // deployment", and sendPasswordResetEmail.ts falls back to logging the
+    // link instead of sending, rather than crashing local dev.
+    fromAddress: process.env.SES_FROM_EMAIL ?? null,
+    region: process.env.AWS_REGION ?? "us-west-2",
+  },
 };

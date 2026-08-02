@@ -11,12 +11,16 @@ export type UrlRoute =
   // panel on hydration instead of silently dropping back to the plain map.
   | { type: "digestArchive" }
   | { type: "trafficOverview" }
+  | { type: "resetPassword"; token: string }
   | { type: "home" };
 
 const AIRCRAFT_RE = /^\/aircraft\/([0-9a-fA-F]{6})$/;
 const NEIGHBORHOOD_RE = /^\/neighborhood\/(\d{5})$/;
 const AIRPORT_RE = /^\/airport\/([A-Za-z]{4})$/;
 const DIGEST_RE = /^\/digest\/(\d{4}-\d{2}-\d{2})$/;
+// base64url charset (randomBytes(32).toString("base64url") server-side —
+// api/src/auth/passwordReset.ts) — no characters here need URL escaping.
+const RESET_PASSWORD_RE = /^\/reset-password\/([A-Za-z0-9_-]+)$/;
 
 function parseRoute(pathname: string): UrlRoute {
   const aircraftMatch = pathname.match(AIRCRAFT_RE);
@@ -30,6 +34,9 @@ function parseRoute(pathname: string): UrlRoute {
 
   const digestMatch = pathname.match(DIGEST_RE);
   if (digestMatch) return { type: "digest", date: digestMatch[1] };
+
+  const resetPasswordMatch = pathname.match(RESET_PASSWORD_RE);
+  if (resetPasswordMatch) return { type: "resetPassword", token: resetPasswordMatch[1] };
 
   if (pathname === "/digest") return { type: "digestArchive" };
   if (pathname === "/traffic") return { type: "trafficOverview" };

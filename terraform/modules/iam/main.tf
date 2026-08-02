@@ -54,6 +54,33 @@ resource "aws_iam_instance_profile" "ec2_node" {
   role        = aws_iam_role.ec2_node.name
 }
 
+# SES send permission for the api service's password-reset emails
+# (api/src/email/sendPasswordResetEmail.ts) — same shared-node-role model
+# ECR pull permission above already uses (no per-pod AWS identity exists on
+# this self-managed cluster, so every pod on a node inherits the node's
+# role). A standalone policy resource attached to the existing role, not a
+# change to the role/instance-profile's name or module.ec2's inputs — adding
+# this shouldn't force any EC2 instance replacement.
+#
+# Unconditional (no count) rather than gated on a nullable variable like
+# secrets_read's readable_secret_arns: ses_identity_arn is module.ses's
+# identity_arn output, a computed attribute that's unknown until module.ses
+# itself is first created — count can't be derived from a value that isn't
+# known at plan time, so this can't be made conditional the way the SES
+# route53 records below tried to be either.
+resource "aws_iam_role_policy" "ses_send" {
+  name = "${var.project}-ses-send"
+  role = aws_iam_role.ec2_node.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+      Resource = var.ses_identity_arn
+    }]
+  })
+}
+
 # ---------------------------------------------------------------------------
 # GitHub Actions OIDC: lets the repo's workflows assume an AWS role without
 # a long-lived access key, scoped to `git push`-triggered runs on this repo.

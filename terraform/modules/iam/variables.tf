@@ -17,3 +17,8 @@ variable "readable_secret_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "ses_identity_arn" {
+  description = "module.ses's identity_arn output."
+  type        = string
+}

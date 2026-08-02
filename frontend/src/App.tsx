@@ -53,7 +53,9 @@ export default function App() {
           ? "digest"
           : route.type === "trafficOverview"
             ? "traffic"
-            : "legend",
+            : route.type === "resetPassword"
+              ? "auth"
+              : "legend",
   );
   // Tracked independently of the URL so the neighborhood panel's current zip
   // survives switching away and back (e.g. to look at an aircraft) — the URL
@@ -71,6 +73,10 @@ export default function App() {
   // rather than remembered — a direct /digest/:date link shows that date,
   // everything else (including reopening via the rail) shows yesterday.
   const digestDate = route.type === "digest" ? route.date : yesterdayLA();
+  // URL-driven, not stateful — a /reset-password/:token link only ever means
+  // one thing, so there's nothing to "remember" the way neighborhoodZip/
+  // boardIcao do for panels the user can navigate away from and back to.
+  const resetToken = route.type === "resetPassword" ? route.token : null;
   const [pinDropArmed, setPinDropArmed] = useState(false);
   const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -261,7 +267,13 @@ export default function App() {
             />
           )}
           {activeRailPanel === "auth" && (
-            <AuthPanel user={user} onAuthChange={setUser} onClose={() => toggleRailPanel("auth")} />
+            <AuthPanel
+              user={user}
+              onAuthChange={setUser}
+              onClose={() => toggleRailPanel("auth")}
+              resetToken={resetToken}
+              onResetComplete={() => navigate("/")}
+            />
           )}
         </div>
       )}

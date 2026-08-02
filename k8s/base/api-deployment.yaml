@@ -46,6 +46,8 @@ spec:
               value: "redis://$(REDIS_HOST):$(REDIS_PORT)"
             - name: CORS_ORIGIN
               value: "http://pugetscope.127.0.0.1.nip.io:8081"
+            - name: SES_FROM_EMAIL
+              value: ""
           readinessProbe:
             httpGet: { path: /healthz, port: 3000 }
             initialDelaySeconds: 3

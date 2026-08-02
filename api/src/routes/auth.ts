@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
-import { createUser, findUserByEmail, findUserById } from "../auth/users.js";
+import { createUser, findUserByEmail, findUserById, updatePassword } from "../auth/users.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
+import { createResetToken, consumeResetToken } from "../auth/passwordReset.js";
+import { sendPasswordResetEmail } from "../email/sendPasswordResetEmail.js";
 import {
   clearSessionCookie,
   createSession,
@@ -75,4 +77,61 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.send(user);
   });
+
+  app.post<{ Body: { email?: string } }>(
+    "/auth/forgot-password",
+    // Tighter than the app-wide default (index.ts) — this triggers an
+    // outbound email send and is the natural target for enumeration/abuse.
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { email } = request.body ?? {};
+      if (!email || !EMAIL_RE.test(email)) {
+        return reply.code(400).send({ error: "valid email required" });
+      }
+
+      // Same constant-shape-response posture as /auth/login above — the
+      // response never reveals whether this email is registered. Only a
+      // real user actually gets a token + email; a made-up address just
+      // silently does nothing.
+      const user = await findUserByEmail(email);
+      if (user) {
+        const token = await createResetToken(user.id);
+        const resetUrl = `${config.corsOrigin}/reset-password/${token}`;
+        await sendPasswordResetEmail(user.email, resetUrl).catch((err) => {
+          app.log.error({ err }, "failed to send password reset email");
+        });
+      }
+
+      return reply.send({ ok: true });
+    },
+  );
+
+  app.post<{ Body: { token?: string; password?: string } }>(
+    "/auth/reset-password",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { token, password } = request.body ?? {};
+      if (!token) {
+        return reply.code(400).send({ error: "token required" });
+      }
+      if (!password || password.length < 8) {
+        return reply.code(400).send({ error: "password must be at least 8 characters" });
+      }
+
+      const userId = await consumeResetToken(token);
+      if (!userId) {
+        return reply.code(400).send({ error: "invalid or expired reset link" });
+      }
+
+      const passwordHash = await hashPassword(password);
+      await updatePassword(userId, passwordHash);
+
+      const user = await findUserById(userId);
+      // A successful reset logs the user straight in, same as signup/login —
+      // no reason to make them re-enter the password they just set.
+      const sessionToken = await createSession(userId);
+      setSessionCookie(reply, sessionToken);
+      return reply.send(user);
+    },
+  );
 }

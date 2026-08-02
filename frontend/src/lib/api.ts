@@ -303,6 +303,18 @@ export const api = {
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<CurrentUser>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    }),
+
   logSpotting: (icao24: string) =>
     request<SpottingResult>("/spottings", {
       method: "POST",
