@@ -3,10 +3,18 @@ import { pool } from "./db/postgres.js";
 import { refreshOverflightRollup } from "./db/overflightRollup.js";
 
 // One-time manual script (see ingestion/package.json's `backfill-overflight-
-// rollup`) — same convention as backfillTrafficRollup.ts. Populates
-// overflight_hourly_counts for all of `positions`'s existing history in one
-// shot: refreshOverflightRollup's WHERE clause is a sargable range on
-// recorded_at, so this stays cheap regardless of how far back history goes.
+// rollup`) — same convention as backfillTrafficRollup.ts, with one real
+// difference: this backfills one LA date at a time rather than the whole
+// range in a single refreshOverflightRollup call. Unlike traffic's
+// ST_DWithin-from-a-point spatial filter, this query's ST_Intersects JOIN
+// against zip_boundaries is pricier per row, and since `positions` only
+// retains a couple weeks of history, a "backfill everything" range isn't a
+// selective predicate — it's most of the table. Verified live: a single
+// call covering all 17 days present in production timed out at 120s: exactly
+// the same non-selective-predicate failure mode docs/rollup-tables.md
+// documents, just hitting the one-time backfill instead of a live request.
+// Chunking to one day per call bounds each query to ~a day's worth of
+// `positions` regardless of how much history exists.
 function allLaDatesBetween(minDate: string, maxDate: string): string[] {
   const [y, m, d] = minDate.split("-").map(Number);
   const anchor = Date.UTC(y, m - 1, d);
@@ -37,10 +45,14 @@ async function backfill(): Promise<void> {
 
   const dates = allLaDatesBetween(minDate, todayLA);
   console.log(`[backfill-overflight-rollup] backfilling ${dates.length} date(s): ${minDate} through ${todayLA}`);
-  // Generous timeout vs. the poll loop's 5s default — same rationale as
-  // backfillTrafficRollup.ts's BACKFILL_STATEMENT_TIMEOUT_MS.
-  const BACKFILL_STATEMENT_TIMEOUT_MS = 120_000;
-  await refreshOverflightRollup(pool, dates, BACKFILL_STATEMENT_TIMEOUT_MS);
+  // Generous per-day timeout vs. the poll loop's 5s default — same rationale
+  // as backfillTrafficRollup.ts's BACKFILL_STATEMENT_TIMEOUT_MS, just applied
+  // per date instead of once for the whole range (see comment above).
+  const BACKFILL_STATEMENT_TIMEOUT_MS = 30_000;
+  for (const date of dates) {
+    await refreshOverflightRollup(pool, [date], BACKFILL_STATEMENT_TIMEOUT_MS);
+    console.log(`[backfill-overflight-rollup] ${date} done`);
+  }
   console.log("[backfill-overflight-rollup] done");
 }
 

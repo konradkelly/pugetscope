@@ -91,15 +91,16 @@ Then `KUBECONFIG=k8s/ec2-kubeconfig kubectl get nodes` works normally. `k8s/ec2-
 **One-time step after the traffic-rollup migration ships**: `traffic_daily_counts`/`traffic_hourly_counts` (see `db/init/001_schema.sql`) are only populated going forward by `ingestion`'s poll loop (today + yesterday, every cycle). Any `positions` history from before this shipped needs a manual one-time backfill:
 ```
 export KUBECONFIG=k8s/ec2-kubeconfig
-kubectl exec -n pugetscope deploy/ingestion -- npm run backfill-rollup
+kubectl exec -n pugetscope deploy/ingestion -- node dist/backfillTrafficRollup.js
 ```
-Same one-time-manual-script convention as `enrich`/`load-zips` (`ingestion/package.json`) — not run automatically by `up-ec2.sh`, and safe to re-run (upserts, `ON CONFLICT ... DO UPDATE`).
+Same one-time-manual-script convention as `enrich`/`load-zips` (`ingestion/package.json`) — not run automatically by `up-ec2.sh`, and safe to re-run (upserts, `ON CONFLICT ... DO UPDATE`). Run the compiled `dist/*.js` file directly, **not** `npm run backfill-rollup` — that script shells out to `tsx src/backfillTrafficRollup.ts`, but the runtime image (`ingestion/Dockerfile`) only ever copies `dist/` in, and `tsx` itself is a devDependency pruned by `npm ci --omit=dev`, so the `npm run` form 127s (`tsx: not found`) against a deployed pod every time — confirmed live while running the overflight backfill below for the first time.
 
 **Same step for `overflight_hourly_counts`** (neighborhood noise analytics' own rollup table, `ingestion/src/db/overflightRollup.ts`) — identical rationale and convention, easy to forget as a *second* backfill since it's easy to only remember the traffic one above:
 ```
 export KUBECONFIG=k8s/ec2-kubeconfig
-kubectl exec -n pugetscope deploy/ingestion -- npm run backfill-overflight-rollup
+kubectl exec -n pugetscope deploy/ingestion -- node dist/backfillOverflightRollup.js
 ```
+Same `node dist/*.js`, not `npm run`, caveat as above. This one also backfills one LA date at a time internally (`backfillOverflightRollup.ts`) rather than the whole range in a single query like the traffic backfill does — confirmed live that a single call covering all of `positions`'s ~17 retained days timed out at 120s (ST_Intersects against zip polygons is pricier per row than traffic's ST_DWithin-from-a-point, and since `positions` only retains a couple weeks, "backfill everything" isn't a selective predicate — the same non-selective-predicate failure mode `docs/rollup-tables.md` documents, just hitting the one-time backfill instead of a live request).
 
 **Automated deploys**: `.github/workflows/deploy.yml` runs this same `up-ec2.sh` on every push to `main` (or manually via `gh workflow run deploy.yml` / the Actions tab). It authenticates to AWS via the `module.iam.github_actions` OIDC role (no stored AWS keys), opens the same SSM port-forward tunnel a human would, and reuses `push-ecr.sh`/`create-secrets-ec2.sh`/`up-ec2.sh` unmodified. Deliberately does **not** run Terraform — infra changes stay a manual, `terraform plan`-checked step (see the EC2 drift note in `docs/SPEC.md` item 8). The manual flow above still works and is the fallback for debugging a failed deploy.
 
