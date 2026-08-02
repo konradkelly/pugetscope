@@ -174,7 +174,10 @@ export default function App() {
         </div>
       )}
 
-      <div className="fixed bottom-16 left-4 z-20 flex items-end gap-2 sm:absolute sm:bottom-4 sm:z-auto">
+      {/* z-0, not z-20 like the tab bar below — this cluster should sit
+          *behind* an open sheet (z-10) so the sheet's opaque card hides it
+          entirely, not float on top of the sheet's own content. */}
+      <div className="fixed bottom-16 left-4 z-0 flex items-end gap-2 sm:absolute sm:bottom-4 sm:z-auto">
         <div className="flex items-center gap-1.5 rounded bg-white/90 px-3 py-1 text-xs text-gray-700 shadow">
           <Circle
             size={8}
