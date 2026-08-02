@@ -95,6 +95,12 @@ kubectl exec -n pugetscope deploy/ingestion -- npm run backfill-rollup
 ```
 Same one-time-manual-script convention as `enrich`/`load-zips` (`ingestion/package.json`) — not run automatically by `up-ec2.sh`, and safe to re-run (upserts, `ON CONFLICT ... DO UPDATE`).
 
+**Same step for `overflight_hourly_counts`** (neighborhood noise analytics' own rollup table, `ingestion/src/db/overflightRollup.ts`) — identical rationale and convention, easy to forget as a *second* backfill since it's easy to only remember the traffic one above:
+```
+export KUBECONFIG=k8s/ec2-kubeconfig
+kubectl exec -n pugetscope deploy/ingestion -- npm run backfill-overflight-rollup
+```
+
 **Automated deploys**: `.github/workflows/deploy.yml` runs this same `up-ec2.sh` on every push to `main` (or manually via `gh workflow run deploy.yml` / the Actions tab). It authenticates to AWS via the `module.iam.github_actions` OIDC role (no stored AWS keys), opens the same SSM port-forward tunnel a human would, and reuses `push-ecr.sh`/`create-secrets-ec2.sh`/`up-ec2.sh` unmodified. Deliberately does **not** run Terraform — infra changes stay a manual, `terraform plan`-checked step (see the EC2 drift note in `docs/SPEC.md` item 8). The manual flow above still works and is the fallback for debugging a failed deploy.
 
 Access: **https://pugetscope.com/** — Route 53 (`terraform/modules/route53`) resolves it to a stable Elastic IP (`terraform/modules/ec2`'s `aws_eip.ingress`, attached to the control-plane node — functionally it doesn't matter which node holds it, kube-proxy forwards any node's NodePort traffic to the right pod regardless). Hostinger stays the domain registrar; its nameservers were pointed at the Route 53 zone's 4 `name_servers` (a manual one-time step — `terraform output route53_name_servers` to get them).

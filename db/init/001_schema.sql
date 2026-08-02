@@ -123,6 +123,26 @@ CREATE TABLE IF NOT EXISTS zip_boundaries (
 CREATE INDEX IF NOT EXISTS zip_boundaries_boundary_gist_idx
   ON zip_boundaries USING GIST (boundary);
 
+-- Pre-aggregated hourly overflight counts per zip, restricted to the 6
+-- curated "noise-relevant" zips the frontend surfaces (see
+-- NeighborhoodAnalyticsPanel.tsx's ZIP_OPTIONS) — the same rollup pattern as
+-- traffic_hourly_counts above, adapted for a spatial (not per-airport-point)
+-- predicate. Maintained incrementally by ingestion (src/db/overflightRollup.ts)
+-- so api/src/routes/analytics.ts never has to ST_Intersects-join the full
+-- `positions` table per request. avg altitude isn't re-aggregable across rows
+-- the way SUM/MIN are, so altitude_sum + altitude_count are stored instead of
+-- a precomputed average; readers compute avg = altitude_sum / altitude_count.
+CREATE TABLE IF NOT EXISTS overflight_hourly_counts (
+  zcta5 TEXT NOT NULL REFERENCES zip_boundaries(zcta5),
+  date DATE NOT NULL,
+  hour SMALLINT NOT NULL,
+  overflights INTEGER NOT NULL,
+  altitude_sum DOUBLE PRECISION NOT NULL DEFAULT 0,
+  altitude_count INTEGER NOT NULL DEFAULT 0,
+  min_altitude DOUBLE PRECISION,
+  PRIMARY KEY (zcta5, date, hour)
+);
+
 -- Personal spotting log (auth-gated) — the payoff for accounts existing.
 -- Each row is a user "logging" a sighting, auto-confirmed server-side
 -- against a recent `positions` row (api/src/routes/spottings.ts) rather

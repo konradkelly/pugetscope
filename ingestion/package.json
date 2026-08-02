@@ -10,6 +10,7 @@
     "enrich": "tsx src/enrich.ts",
     "load-zips": "tsx src/loadZips.ts",
     "backfill-rollup": "tsx src/backfillTrafficRollup.ts",
+    "backfill-overflight-rollup": "tsx src/backfillOverflightRollup.ts",
     "generate-digest": "tsx src/generateDigest.ts",
     "typecheck": "tsc --noEmit"
   },

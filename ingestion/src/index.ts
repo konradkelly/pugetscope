@@ -4,6 +4,7 @@ import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
 import { writeLatestPositions, writeFlowReadings } from "./db/redis.js";
 import { insertPositions, pool } from "./db/postgres.js";
 import { refreshTrafficRollup } from "./db/trafficRollup.js";
+import { refreshOverflightRollup } from "./db/overflightRollup.js";
 import { attachRoutes } from "./enrichment/attachRoutes.js";
 import { attachAircraftType } from "./enrichment/attachAircraftType.js";
 import { startFidsRefreshWorker } from "./enrichment/fidsRefreshWorker.js";
@@ -40,6 +41,24 @@ function triggerTrafficRollupRefresh(): void {
     });
 }
 
+// Same guard-per-refresh-type pattern as triggerTrafficRollupRefresh — a
+// separate flag so a slow overflight refresh can't also skip/delay the
+// traffic one (or vice versa).
+let overflightRollupRefreshInFlight = false;
+
+function triggerOverflightRollupRefresh(): void {
+  if (overflightRollupRefreshInFlight) {
+    console.warn("[ingestion] skipping overflight rollup refresh — previous cycle still in flight");
+    return;
+  }
+  overflightRollupRefreshInFlight = true;
+  refreshOverflightRollup(pool, [todayLA(), yesterdayLA()])
+    .catch((err) => console.error("[ingestion] overflight rollup refresh failed:", err))
+    .finally(() => {
+      overflightRollupRefreshInFlight = false;
+    });
+}
+
 async function pollOnce(): Promise<void> {
   const states = await fetchPugetSoundStates();
   console.log(`[ingestion] polled ${states.length} aircraft in region`);
@@ -52,6 +71,8 @@ async function pollOnce(): Promise<void> {
   // from today's freshly-written positions. Never awaited — a slow/failed
   // rollup query must not delay the live position/Redis write path below.
   triggerTrafficRollupRefresh();
+  // Same idea, for overflight_hourly_counts (neighborhood noise analytics).
+  triggerOverflightRollupRefresh();
   // Typecode lookup runs after insertPositions (which upserts new icao24
   // rows) rather than in parallel with it, so a first-ever-seen aircraft's
   // own upsert isn't racing this read — not that it matters for typecode
