@@ -202,7 +202,22 @@ export interface Digest {
   headline: string;
   body: string;
   metaDescription: string;
-  stats: { date: string; totalFlights: number; byAirport: Record<string, number> };
+  stats: {
+    date: string;
+    totalFlights: number;
+    byAirport: Record<string, number>;
+    // Absent on digests generated before these fields existed.
+    vsLastWeek?: number | null;
+    busiestHour?: number | null;
+    notableAircraft?: Array<{
+      icao24: string;
+      registration: string | null;
+      manufacturer: string | null;
+      model: string | null;
+      typecode: string | null;
+      operator: string | null;
+    }>;
+  };
 }
 
 export interface AlertWatch {

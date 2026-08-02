@@ -331,3 +331,46 @@ Returns each aircraft's most recent known position within `[at - windowSeconds, 
 **A real gap worth stating rather than glossing over** (matching how §12 calls out its own "Remaining gap"): `positions` only stores `icao24, callsign, position, altitude, ground_speed, heading, vertical_speed, recorded_at` — no `typecode`, `category`, or `route`. Those are enrichment fields attached only to the *live* Redis blob (`ingestion/src/enrichment/attachAircraftType.ts`, `attachRoutes.ts`), never persisted per position row. A replayed frame can still join `positions.icao24` against the static `aircraft` reference table for registration/manufacturer/model/operator (that part *is* stored and joinable), but a replayed aircraft has no `category`/`typecode` to size/shape its marker by, and no route/ETA — it renders with the default "unknown type" marker and no route panel content. Accepted limitation for v1, not solved here.
 
 **Frontend.** Rather than a small side panel like the other rail features, replay changes what the *map itself* shows, so it's better framed as a mode toggle for the whole app: a "Replay" toggle (rail item) that swaps the map's data source from the live `useAircraftFeed()` hook to a new `useReplayFeed()` hook (polls `/replay/frame` on a timer as the scrubber advances, converts each frame into the same `AircraftByIcao` shape `useAircraftFeed` already produces) and surfaces a scrubber bar (slider + play/pause + speed: 1x/5x/20x) at the bottom of the screen while active. `AircraftMap.tsx` needs no changes to render replayed traffic — it already only cares about receiving an `AircraftByIcao`-shaped `aircraft` prop, not where it came from; `App.tsx` just decides which hook currently feeds it.
+
+## 17. Daily Digest Enrichment (v2 — partially built)
+
+Status: 17.1 and 17.2 built (below); 17.3–17.5 still spec-only. Extends the existing digest (`ingestion/src/generateDigest.ts`, `digests` table, built per the commit history) rather than replacing it — `DigestStats` originally was just `{date, totalFlights, byAirport}` sourced from `traffic_daily_counts`, enough for a flat "N flights" blurb but leaving every other table in the schema (`aircraft`, `fids_flights`, `zip_boundaries`, `spottings`) untouched. This section specs additional real, queryable facts to fold into `DigestStats` so the nightly LLM call has more to genuinely observe.
+
+**Ground rule carried over unchanged from the existing prompt:** `generateContent()`'s instruction — "plain factual prose describing the day's air traffic based only on these numbers, no speculation" — stays the contract as `DigestStats` grows. Every new field below is a real aggregate query result, computed in `loadStats()` before the LLM is ever called, never left for the model to infer. The output JSON schema (`headline`/`body`/`metaDescription`) doesn't need to change; only the input stats and the prompt's fact list grow.
+
+### 17.1 Trend comparisons (cheap — `traffic_daily_counts` / `traffic_hourly_counts` only) — ✅ built
+
+No new tables or indexes — both rollup tables already exist and are maintained incrementally by `ingestion/src/db/trafficRollup.ts`.
+
+- Same-day-last-week delta: `loadVsLastWeek()` in `generateDigest.ts` — `SELECT flights FROM traffic_daily_counts WHERE scope='REGION' AND date = ($1::date - interval '7 days')::date`, compared against the current day's already-loaded `region` count via `formatWeekComparison()`.
+- Busiest hour of the day: `loadBusiestHour()` — `SELECT hour FROM traffic_hourly_counts WHERE scope='REGION' AND date=$1 ORDER BY flights DESC LIMIT 1`, formatted via `formatHourRange()`.
+- `DigestStats` fields: `vsLastWeek: number | null` (null if no row 7 days back yet — same "don't fabricate a comparison with no baseline" posture `loadStats()` already applies to the missing-REGION-row case), `busiestHour: number | null`. Both are omitted from the LLM prompt entirely when null, rather than mentioned as zero/unknown.
+
+### 17.2 Notable aircraft (`aircraft` table) — ✅ built
+
+Goal: surface a rare type/operator/registration seen that day, not just a count.
+
+- **Rarity definition (resolved):** first-ever sighting, via `aircraft.first_seen` — set once on insert and never updated (`insertPositions`'s `ON CONFLICT ... DO UPDATE SET last_seen = now()` never touches `first_seen`), so it's a genuine "never seen before this station" signal, not the positions-join rarity baseline originally sketched below.
+- `loadNotableAircraft()` — `SELECT icao24, registration, manufacturer, model, typecode, operator FROM aircraft WHERE (first_seen AT TIME ZONE 'America/Los_Angeles')::date = $1::date AND typecode IS NOT NULL ORDER BY icao24 LIMIT 5` — cheaper than the original plan since it skips the `positions` join entirely; capped at `NOTABLE_AIRCRAFT_LIMIT` and restricted to rows with a `typecode` so the digest always has something concrete to describe.
+- `DigestStats` field: `notableAircraft: NotableAircraft[]` (empty array, not null, when none found that day — the prompt only adds the "first-ever tracked today" line when the array is non-empty).
+
+### 17.3 Airline/route highlights (`fids_flights`) — blocked on a real gap
+
+Goal: "busiest airline," "longest delay," or "notable diversion" for the day, from AeroDataBox data already being fetched.
+
+**The gap:** `fids_flights` is not historical. `ingestion/src/db/fidsFlights.ts`'s `replaceBoard()` does a full `DELETE` + re-`INSERT` per airport on every refresh, by design (§14) — the table is deliberately *only* ever the current ~3h-ago-to-9h-ahead window, so a flight that's already flown gets purged from the table well before the digest job runs at 10:00 UTC the next day. There is currently no persisted record of what `fids_flights` looked like for a given past day, so `generateDigest.ts` has nothing to query for "yesterday." Building this needs a new small rollup step — e.g. `fidsRefreshWorker.ts` upserting daily airline/status counts into a new table *before* `replaceBoard()`'s delete, mirroring how `trafficRollup.ts` incrementally maintains `traffic_daily_counts` instead of aggregating raw history after the fact. Not attempted here — a real gap to state plainly (matching how §12 and §16 each call out their own), not a silent limitation.
+
+### 17.4 Neighborhood/overflight angle (`zip_boundaries` + `positions`)
+
+Goal: "most overflown neighborhood" — ties the digest to the same civic angle as §13.
+
+- `SELECT z.zcta5, COUNT(*) FROM positions p JOIN zip_boundaries z ON ST_Intersects(p.position, z.boundary) WHERE p.recorded_at >= $1 AND p.recorded_at < $1 + interval '1 day' GROUP BY z.zcta5 ORDER BY count DESC LIMIT 1` — same GiST index (`zip_boundaries_boundary_gist_idx`) §13's `analytics.ts` routes already use, and the same narrow-single-day range as §17.2 above, so no new timeout risk.
+- New `DigestStats` field: `topZip: { zcta5: string; count: number } | null`.
+
+### 17.5 Community angle (`spottings`) — low priority, usage-gated
+
+- `SELECT COUNT(*) FROM spottings WHERE spotted_at >= $1 AND spotted_at < $1 + interval '1 day'` — trivial query, but the feature is new and likely low-volume, so most days this would read "0 sightings" for a long while. Suggest only including this fact in the prompt when the count is > 0 (same "don't publish a fact that's just noise" posture as the REGION-row check), rather than teaching the LLM to write around a near-always-zero number.
+
+### Suggested build order
+
+**17.1 and 17.2 are built.** Remaining, cheapest first: **17.4 (neighborhood)** needs no new tables and reuses an existing index — a straightforward addition to `loadStats()`, same pattern as 17.1/17.2. **17.3 (airline/delay highlights)** is blocked on a real gap — a new persisted FIDS rollup table — and shouldn't be scoped as "just another query" until that's built. **17.5 (community)** is trivial but not worth adding until `spottings` has real usage.
