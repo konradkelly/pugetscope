@@ -49,9 +49,11 @@ export default function App() {
       ? "noise"
       : route.type === "airport"
         ? "board"
-        : route.type === "digest"
+        : route.type === "digest" || route.type === "digestArchive"
           ? "digest"
-          : "legend",
+          : route.type === "trafficOverview"
+            ? "traffic"
+            : "legend",
   );
   // Tracked independently of the URL so the neighborhood panel's current zip
   // survives switching away and back (e.g. to look at an aircraft) — the URL
@@ -211,7 +213,10 @@ export default function App() {
             <AircraftLegend onClose={() => setActiveRailPanel(null)} />
           )}
           {activeRailPanel === "traffic" && (
-            <TrafficVolumePanel onClose={() => setActiveRailPanel(null)} />
+            <TrafficVolumePanel
+              onClose={() => setActiveRailPanel(null)}
+              initialAirport={route.type === "trafficOverview" ? "ALL" : undefined}
+            />
           )}
           {activeRailPanel === "board" && (
             <AirportBoardPanel

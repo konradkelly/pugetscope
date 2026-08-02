@@ -10,6 +10,7 @@ import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
   onClose: () => void;
+  initialAirport?: string;
 }
 
 interface AirportOption {
@@ -77,8 +78,8 @@ function pickTicks(n: number, maxTicks = 6): number[] {
   return Array.from(new Set(ticks));
 }
 
-export function TrafficVolumePanel({ onClose }: Props) {
-  const [airport, setAirport] = useState(AIRPORT_OPTIONS[0].icao);
+export function TrafficVolumePanel({ onClose, initialAirport }: Props) {
+  const [airport, setAirport] = useState(initialAirport ?? AIRPORT_OPTIONS[0].icao);
   const [days, setDays] = useState(30);
 
   const [totals, setTotals] = useState<AirportTraffic[] | null>(null);

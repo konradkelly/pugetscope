@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/postgres.js";
+import { escapeHtml, getFrontendShell, spliceCrawlerHtml } from "../lib/crawlerPage.js";
 
 const ZIP_RE = /^\d{5}$/;
 const MAX_LOOKBACK_DAYS = 90;
@@ -15,6 +16,19 @@ const MAX_EVENT_WINDOW_HOURS = 24;
 // stays a live, narrow-window query and keeps accepting any zip loaded into
 // zip_boundaries (not just these 6) via zipExists() below.
 const NOISE_ZIPS = ["98108", "98146", "98158", "98168", "98188", "98198"];
+
+// Human-readable neighborhood names for the same 6 zips, for the
+// crawler-facing /neighborhood/:zip page below — mirrors
+// NeighborhoodAnalyticsPanel.tsx's ZIP_OPTIONS labels. Duplicated per this
+// repo's no-shared-package convention (see the NOISE_ZIPS comment above).
+const ZIP_LABELS: Record<string, string> = {
+  "98108": "Beacon Hill / Georgetown",
+  "98146": "Burien",
+  "98158": "SeaTac / Des Moines",
+  "98168": "Tukwila",
+  "98188": "SeaTac",
+  "98198": "Des Moines",
+};
 
 async function zipExists(zcta5: string): Promise<boolean> {
   const result = await pool.query("SELECT 1 FROM zip_boundaries WHERE zcta5 = $1", [zcta5]);
@@ -159,4 +173,47 @@ export async function analyticsRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ zip, from: fromDate.toISOString(), to: toDate.toISOString(), events: result.rows });
     },
   );
+
+  // Crawler/browser-facing page — reached at the bare
+  // pugetscope.com/neighborhood/:zip (no /api prefix, see
+  // k8s/base/ingress.yaml), a real server-rendered HTML document so the page
+  // has indexable text with no JS execution required. Same pattern as
+  // digest.ts's /digest/:date and airports.ts's /airport/:icao; the SPA's own
+  // client-side route (useUrlRoute.ts) opens the same noise panel on this URL
+  // once hydrated. Restricted to NOISE_ZIPS, same as /analytics/overflights/summary.
+  app.get<{ Params: { zip: string } }>("/neighborhood/:zip", async (request, reply) => {
+    const { zip } = request.params;
+    if (!ZIP_RE.test(zip) || !NOISE_ZIPS.includes(zip)) {
+      return reply.code(404).send("Unknown neighborhood.");
+    }
+    const label = ZIP_LABELS[zip] ?? zip;
+
+    let shell: string;
+    try {
+      shell = await getFrontendShell();
+    } catch (err) {
+      request.log.error(err, "[analytics] frontend shell unavailable");
+      return reply.code(503).send("Page temporarily unavailable.");
+    }
+
+    // 7-day total overflight count, same rollup /analytics/overflights/summary
+    // reads — cheap enough to run per-request and gives crawlers/link-preview
+    // a real, current number rather than static boilerplate.
+    const dates = recentDates(7);
+    const totalResult = await pool.query<{ overflights: string }>(
+      `SELECT SUM(overflights)::int AS overflights FROM overflight_hourly_counts
+       WHERE zcta5 = $1 AND date BETWEEN $2 AND $3`,
+      [zip, dates[0], dates[dates.length - 1]],
+    );
+    const weekOverflights = Number(totalResult.rows[0]?.overflights ?? 0);
+
+    const title = `${zip} — ${label} Aircraft Noise Analytics | PugetScope`;
+    const description = `Overflight frequency and aircraft noise analytics for ${label} (${zip}), tracked live by PugetScope. ${weekOverflights.toLocaleString()} overflights in the past 7 days.`;
+    const bodyHtml = `<article><h1>${escapeHtml(label)} (${escapeHtml(zip)}) — Aircraft Noise Analytics</h1><p>PugetScope recorded ${weekOverflights.toLocaleString()} aircraft overflights above ${escapeHtml(label)} over the past 7 days.</p><p>See the hour-by-hour noise pattern and recent flyover details on the map.</p><p><a href="/">View the live tracker &rarr;</a></p></article>`;
+
+    const url = `${request.protocol}://${request.headers.host}/neighborhood/${zip}`;
+    const html = spliceCrawlerHtml(shell, { title, description, url, bodyHtml });
+
+    return reply.type("text/html").send(html);
+  });
 }

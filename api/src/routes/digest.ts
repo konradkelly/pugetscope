@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/postgres.js";
+import { escapeHtml, getFrontendShell, spliceCrawlerHtml } from "../lib/crawlerPage.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -23,13 +24,30 @@ async function findDigest(date: string): Promise<DigestRow | null> {
   return result.rows[0] ?? null;
 }
 
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// Cap rather than a query param — this is a public crawler-facing index
+// page, not a paginated API, and 60 days is plenty for both readers and
+// search engines to discover every digest via internal links.
+const ARCHIVE_LIMIT = 60;
+
+interface ArchiveRow {
+  date: string;
+  headline: string;
+}
+
+async function listDigests(): Promise<ArchiveRow[]> {
+  const result = await pool.query<ArchiveRow>(
+    `SELECT to_char(date, 'YYYY-MM-DD') AS date, headline
+     FROM digests ORDER BY date DESC LIMIT $1`,
+    [ARCHIVE_LIMIT],
+  );
+  return result.rows;
+}
+
+function digestArchiveBodyHtml(rows: ArchiveRow[]): string {
+  const items = rows
+    .map((r) => `<li><a href="/digest/${r.date}">${escapeHtml(r.headline)}</a> — ${r.date}</li>`)
+    .join("");
+  return `<article><h1>Daily Digest Archive</h1><p>PugetScope's AI-written daily summaries of Puget Sound air traffic.</p><ul>${items}</ul></article>`;
 }
 
 // Visible content injected as the first child of #root — React's
@@ -44,58 +62,33 @@ function digestBodyHtml(headline: string, body: string): string {
   return `<article><h1>${escapeHtml(headline)}</h1>${paragraphs}<p><a href="/">View the live tracker &rarr;</a></p></article>`;
 }
 
-// Splices digest content into frontend's own already-built index.html
-// (correct hashed asset tags included) rather than hand-assembling a shell —
-// avoids any coupling to Vite's hashed output filenames. See
-// docs/rollup-tables.md-style reasoning in generateDigest.ts for why this
-// reads from traffic_daily_counts rather than positions directly.
-function spliceDigestHtml(
-  shellHtml: string,
-  params: { title: string; description: string; url: string; bodyHtml: string },
-): string {
-  const { title, description, url, bodyHtml } = params;
-  let html = shellHtml;
-
-  html = html.replace(/<title>.*?<\/title>/s, `<title>${escapeHtml(title)}</title>`);
-  html = html.replace(/(<meta name="description" content=")[^"]*(")/, `$1${escapeHtml(description)}$2`);
-  html = html.replace(/(<meta property="og:title" content=")[^"]*(")/, `$1${escapeHtml(title)}$2`);
-  html = html.replace(/(<meta property="og:description" content=")[^"]*(")/, `$1${escapeHtml(description)}$2`);
-  html = html.replace(/(<meta property="og:url" content=")[^"]*(")/, `$1${escapeHtml(url)}$2`);
-  html = html.replace(/(<meta name="twitter:title" content=")[^"]*(")/, `$1${escapeHtml(title)}$2`);
-  html = html.replace(/(<meta name="twitter:description" content=")[^"]*(")/, `$1${escapeHtml(description)}$2`);
-  html = html.replace('<div id="root"></div>', `<div id="root">${bodyHtml}</div>`);
-
-  return html;
-}
-
-// Module-level cache of frontend's built index.html — avoids hitting
-// frontend on every crawler/browser request just to get the same static
-// shell. On refetch failure, a stale-but-correct shell beats a 500; only
-// error out if there's never been a successful fetch.
-const SHELL_CACHE_TTL_MS = 60_000;
-let shellCache: { html: string; fetchedAt: number } | null = null;
-
-async function getFrontendShell(): Promise<string> {
-  const now = Date.now();
-  if (shellCache && now - shellCache.fetchedAt < SHELL_CACHE_TTL_MS) {
-    return shellCache.html;
-  }
-  try {
-    const res = await fetch("http://frontend/index.html");
-    if (!res.ok) throw new Error(`frontend responded ${res.status}`);
-    const html = await res.text();
-    shellCache = { html, fetchedAt: now };
-    return html;
-  } catch (err) {
-    if (shellCache) {
-      console.warn("[digest] frontend shell refresh failed, serving stale copy:", (err as Error).message);
-      return shellCache.html;
-    }
-    throw err;
-  }
-}
-
 export async function digestRoutes(app: FastifyInstance): Promise<void> {
+  // Crawler/browser-facing archive index — reached at the bare
+  // pugetscope.com/digest (no /api prefix, same ingress Prefix rule as
+  // /digest/:date below). Exists so every past digest is reachable by a
+  // crawler via a real link, not just discoverable if it already knows the
+  // exact date — see the sitemap-only-having-home+airports gap this closes.
+  app.get("/digest", async (request, reply) => {
+    let shell: string;
+    try {
+      shell = await getFrontendShell();
+    } catch (err) {
+      request.log.error(err, "[digest] frontend shell unavailable");
+      return reply.code(503).send("Digest archive temporarily unavailable.");
+    }
+
+    const rows = await listDigests();
+    const url = `${request.protocol}://${request.headers.host}/digest`;
+    const html = spliceCrawlerHtml(shell, {
+      title: "Daily Digest Archive | PugetScope",
+      description: "Browse PugetScope's archive of daily AI-written summaries of Puget Sound air traffic.",
+      url,
+      bodyHtml: digestArchiveBodyHtml(rows),
+    });
+
+    return reply.type("text/html").send(html);
+  });
+
   // Crawler/browser-facing page — reached at the bare pugetscope.com/digest/:date
   // (no /api prefix), a real server-rendered HTML document so the digest text
   // is present in the initial response with no JS execution required. See
@@ -121,7 +114,7 @@ export async function digestRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const url = `${request.protocol}://${request.headers.host}/digest/${date}`;
-    const html = spliceDigestHtml(shell, {
+    const html = spliceCrawlerHtml(shell, {
       title: `${row.headline} | PugetScope`,
       description: row.meta_description,
       url,

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/postgres.js";
+import { escapeHtml, getFrontendShell, spliceCrawlerHtml } from "../lib/crawlerPage.js";
 
 // icao/iata/name only — the airport list's lat/lon/radius live in
 // ingestion/src/enrichment/regionalAirports.ts, which is what actually
@@ -202,4 +203,66 @@ export async function trafficRoutes(app: FastifyInstance): Promise<void> {
       });
     },
   );
+
+  // Crawler/browser-facing page — reached at the bare pugetscope.com/traffic
+  // (no /api prefix, see k8s/base/ingress.yaml), a real server-rendered HTML
+  // document so the page has indexable text with no JS execution required.
+  // Same pattern as digest.ts's /digest and airports.ts's /airport/:icao; a
+  // hub page that links out to every /airport/:icao page, which also helps
+  // Google understand the site's overall structure. The SPA's own
+  // client-side route (useUrlRoute.ts's "trafficOverview") opens the
+  // traffic panel defaulted to the same region-wide view once hydrated.
+  app.get("/traffic", async (request, reply) => {
+    let shell: string;
+    try {
+      shell = await getFrontendShell();
+    } catch (err) {
+      request.log.error(err, "[traffic] frontend shell unavailable");
+      return reply.code(503).send("Page temporarily unavailable.");
+    }
+
+    const dates = recentDates(7);
+    const [regionResult, airportResult] = await Promise.all([
+      pool.query<{ flights: number }>(
+        `SELECT SUM(flights)::int AS flights FROM traffic_daily_counts
+         WHERE scope = 'REGION' AND date BETWEEN $1 AND $2`,
+        [dates[0], dates[dates.length - 1]],
+      ),
+      pool.query<{ scope: string; flights: number }>(
+        `SELECT scope, SUM(flights)::int AS flights
+         FROM traffic_daily_counts
+         WHERE scope = ANY($1) AND date BETWEEN $2 AND $3
+         GROUP BY scope`,
+        [REGIONAL_AIRPORTS.map((a) => a.icao), dates[0], dates[dates.length - 1]],
+      ),
+    ]);
+
+    const regionFlights = Number(regionResult.rows[0]?.flights ?? 0);
+    const byScope = new Map(airportResult.rows.map((r) => [r.scope, Number(r.flights)]));
+    const airports = REGIONAL_AIRPORTS.map((a) => ({
+      ...a,
+      flights: byScope.get(a.icao) ?? 0,
+    })).sort((a, b) => b.flights - a.flights);
+
+    const title = "Puget Sound Air Traffic Overview | PugetScope";
+    const description = `Region-wide flight volume across Sea-Tac, Paine Field, Boeing Field, Renton, and Tacoma Narrows, tracked live by PugetScope. ${regionFlights.toLocaleString()} distinct aircraft over the region in the past 7 days.`;
+    // Per-field counts aren't a breakdown of regionFlights and won't sum to
+    // it — a single aircraft can register near more than one nearby field,
+    // while the region total counts each distinct aircraft once (same
+    // scope='REGION' vs per-airport semantics /analytics/traffic/region and
+    // /analytics/traffic/airports already have). Worded as two separate
+    // facts, not "here's the breakdown", so that isn't read as a contradiction.
+    const items = airports
+      .map(
+        (a) =>
+          `<li><a href="/airport/${a.icao}">${escapeHtml(a.name)} (${a.icao})</a> — ${a.flights.toLocaleString()} flights tracked nearby</li>`,
+      )
+      .join("");
+    const bodyHtml = `<article><h1>Puget Sound Air Traffic Overview</h1><p>PugetScope tracked ${regionFlights.toLocaleString()} distinct aircraft over the Puget Sound region in the past 7 days. Here's the 7-day flight count at each of the region's fields:</p><ul>${items}</ul><p><a href="/">View the live tracker &rarr;</a></p></article>`;
+
+    const url = `${request.protocol}://${request.headers.host}/traffic`;
+    const html = spliceCrawlerHtml(shell, { title, description, url, bodyHtml });
+
+    return reply.type("text/html").send(html);
+  });
 }

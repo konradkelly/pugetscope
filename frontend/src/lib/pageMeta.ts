@@ -39,6 +39,16 @@ export function getPageMeta(route: UrlRoute): { title: string; description: stri
         description: `${SITE_TITLE}'s AI-written summary of Puget Sound air traffic on ${route.date}.`,
       };
     }
+    case "digestArchive":
+      return {
+        title: `Daily Digest Archive | ${SITE_TITLE}`,
+        description: `Browse ${SITE_TITLE}'s archive of daily AI-written summaries of Puget Sound air traffic.`,
+      };
+    case "trafficOverview":
+      return {
+        title: `Puget Sound Air Traffic Overview | ${SITE_TITLE}`,
+        description: `Region-wide flight volume across Sea-Tac, Paine Field, Boeing Field, Renton, and Tacoma Narrows, tracked live by ${SITE_TITLE}.`,
+      };
     case "home":
     default:
       return { title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION };

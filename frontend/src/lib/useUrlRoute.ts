@@ -5,6 +5,12 @@ export type UrlRoute =
   | { type: "neighborhood"; zip: string }
   | { type: "airport"; icao: string }
   | { type: "digest"; date: string }
+  // Bare /digest and /traffic — the crawler-facing archive/overview pages
+  // (api/src/routes/digest.ts, traffic.ts) — get their own route types
+  // rather than folding into "home", so the SPA opens the same-topic rail
+  // panel on hydration instead of silently dropping back to the plain map.
+  | { type: "digestArchive" }
+  | { type: "trafficOverview" }
   | { type: "home" };
 
 const AIRCRAFT_RE = /^\/aircraft\/([0-9a-fA-F]{6})$/;
@@ -24,6 +30,9 @@ function parseRoute(pathname: string): UrlRoute {
 
   const digestMatch = pathname.match(DIGEST_RE);
   if (digestMatch) return { type: "digest", date: digestMatch[1] };
+
+  if (pathname === "/digest") return { type: "digestArchive" };
+  if (pathname === "/traffic") return { type: "trafficOverview" };
 
   return { type: "home" };
 }
