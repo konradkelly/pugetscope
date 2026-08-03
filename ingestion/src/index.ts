@@ -2,7 +2,7 @@ import "dotenv/config";
 import { config } from "./config.js";
 import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
 import { writeLatestPositions, writeFlowReadings } from "./db/redis.js";
-import { insertPositions, pool } from "./db/postgres.js";
+import { insertPositions, pool, rollupPool } from "./db/postgres.js";
 import { refreshTrafficRollup } from "./db/trafficRollup.js";
 import { refreshOverflightRollup } from "./db/overflightRollup.js";
 import { attachRoutes } from "./enrichment/attachRoutes.js";
@@ -24,8 +24,8 @@ function yesterdayLA(): string {
 }
 
 // Guards against overlapping refreshes stacking up connection usage across
-// poll cycles if Postgres is briefly slow — a skipped cycle just catches up
-// on the next one, since refreshTrafficRollup always redoes today+yesterday.
+// refresh cycles if Postgres is briefly slow — a skipped cycle just catches
+// up on the next one, since refreshTrafficRollup always redoes today+yesterday.
 let rollupRefreshInFlight = false;
 
 function triggerTrafficRollupRefresh(): void {
@@ -34,7 +34,7 @@ function triggerTrafficRollupRefresh(): void {
     return;
   }
   rollupRefreshInFlight = true;
-  refreshTrafficRollup(pool, [todayLA(), yesterdayLA()])
+  refreshTrafficRollup(rollupPool, [todayLA(), yesterdayLA()])
     .catch((err) => console.error("[ingestion] rollup refresh failed:", err))
     .finally(() => {
       rollupRefreshInFlight = false;
@@ -52,11 +52,25 @@ function triggerOverflightRollupRefresh(): void {
     return;
   }
   overflightRollupRefreshInFlight = true;
-  refreshOverflightRollup(pool, [todayLA(), yesterdayLA()])
+  refreshOverflightRollup(rollupPool, [todayLA(), yesterdayLA()])
     .catch((err) => console.error("[ingestion] overflight rollup refresh failed:", err))
     .finally(() => {
       overflightRollupRefreshInFlight = false;
     });
+}
+
+// Decouples rollup recompute cadence from the 30s poll loop (see
+// config.rollupRefreshIntervalMs) — both rollups redo their whole
+// today+yesterday window every time they run, so firing them on every poll
+// tick was 10x more spatial-join load than the hourly buckets need.
+let lastRollupRefreshAt = 0;
+
+function maybeTriggerRollupRefreshes(): void {
+  const now = Date.now();
+  if (now - lastRollupRefreshAt < config.rollupRefreshIntervalMs) return;
+  lastRollupRefreshAt = now;
+  triggerTrafficRollupRefresh();
+  triggerOverflightRollupRefresh();
 }
 
 async function pollOnce(): Promise<void> {
@@ -67,12 +81,12 @@ async function pollOnce(): Promise<void> {
   // history (insertPositions) doesn't need routes, so it uses the raw
   // states and runs in parallel.
   const [routed] = await Promise.all([attachRoutes(states), insertPositions(states)]);
-  // Fire-and-forget: refreshes traffic_daily_counts/traffic_hourly_counts
-  // from today's freshly-written positions. Never awaited — a slow/failed
-  // rollup query must not delay the live position/Redis write path below.
-  triggerTrafficRollupRefresh();
-  // Same idea, for overflight_hourly_counts (neighborhood noise analytics).
-  triggerOverflightRollupRefresh();
+  // Fire-and-forget, and only once per rollupRefreshIntervalMs (not every
+  // poll): refreshes traffic_daily_counts/traffic_hourly_counts and
+  // overflight_hourly_counts from freshly-written positions. Never awaited —
+  // a slow/failed rollup query must not delay the live position/Redis write
+  // path below.
+  maybeTriggerRollupRefreshes();
   // Typecode lookup runs after insertPositions (which upserts new icao24
   // rows) rather than in parallel with it, so a first-ever-seen aircraft's
   // own upsert isn't racing this read — not that it matters for typecode

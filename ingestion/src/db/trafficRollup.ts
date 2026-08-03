@@ -90,8 +90,8 @@ async function upsertHourly(
 }
 
 // Small window (poll-loop's "today + yesterday" case): tight enough to
-// never meaningfully hold a pooled connection, since ingestion's pool has no
-// `max` set (pg defaults to 10, shared with insertPositions's writes).
+// never meaningfully hold a connection on the dedicated `rollupPool`
+// (db/postgres.ts), separate from insertPositions's writes.
 const DEFAULT_STATEMENT_TIMEOUT_MS = 5_000;
 
 // Recomputes traffic_daily_counts/traffic_hourly_counts for the given

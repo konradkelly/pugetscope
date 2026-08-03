@@ -2,16 +2,36 @@ import pg from "pg";
 import { config } from "../config.js";
 import type { StateVector } from "../openskyClient.js";
 
+// Hot path: insertPositions (below), attachAircraftType, and the FIDS
+// refresh worker — all low-concurrency (the poll loop is sequential), so
+// this only needs headroom for a couple of overlapping calls, not pg's
+// default max of 10.
 export const pool = new pg.Pool({
   connectionString: config.postgres.connectionString,
   ssl: config.postgres.ssl,
+  max: 5,
+});
+
+// Separate, smaller pool for the traffic/overflight rollup refreshes only.
+// Each refresh holds one client for the whole query (a multi-second
+// ST_Intersects/ST_DWithin scan) — on the shared `pool` above, that meant a
+// slow rollup query could tie up a connection insertPositions also needed,
+// right on the every-30s critical path. At most 2 concurrent uses (traffic +
+// overflight; each already serialized against itself via its own in-flight
+// guard in index.ts), so max: 2 is sized to exactly that, not shared budget.
+export const rollupPool = new pg.Pool({
+  connectionString: config.postgres.connectionString,
+  ssl: config.postgres.ssl,
+  max: 2,
 });
 
 // Without this, a network error on an idle client (e.g. RDS dropping a
 // connection) is an unhandled 'error' event and crashes the process.
-pool.on("error", (err) => {
-  console.error("[postgres] idle client error:", err);
-});
+for (const p of [pool, rollupPool]) {
+  p.on("error", (err) => {
+    console.error("[postgres] idle client error:", err);
+  });
+}
 
 export async function insertPositions(states: StateVector[]): Promise<void> {
   if (states.length === 0) return;

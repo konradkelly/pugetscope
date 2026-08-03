@@ -38,6 +38,14 @@ export const config = {
     lomax: -121.9,
   },
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 30_000),
+  // Deliberately much coarser than pollIntervalMs: traffic/overflight rollups
+  // re-scan the full today+yesterday `positions` window on every refresh
+  // (see trafficRollup.ts/overflightRollup.ts), so running them at 30s
+  // cadence was 10x more ST_Intersects/ST_DWithin load than the hourly
+  // rollup buckets actually need — a real contributor to prod DB CPU/memory
+  // pressure. Poll cadence itself stays at 30s (map freshness); only the
+  // rollup recompute is decoupled to this slower interval.
+  rollupRefreshIntervalMs: Number(process.env.ROLLUP_REFRESH_INTERVAL_MS ?? 5 * 60 * 1000),
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   redisKeyTtlSeconds: 90, // a couple missed polls before a key is considered stale
   postgres: {
