@@ -5,6 +5,12 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  /* Without this, any rubber-band bounce from a touch-drag on the map
+     reads to mobile Chrome as page scroll, which toggles its URL bar
+     and shifts the whole layout mid-drag (not an issue on Firefox for
+     Android, which doesn't tie its toolbar to scroll the same way). */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
