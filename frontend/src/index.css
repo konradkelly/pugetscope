@@ -22,6 +22,6 @@ body {
    source order and silently cancel any offset here. */
 @media (max-width: 639px) {
   .maplibregl-ctrl-bottom-right {
-    bottom: 76px !important;
+    bottom: 84px !important;
   }
 }
