@@ -157,7 +157,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative h-screen w-screen">
+    <div className="relative h-dvh w-screen">
       <AircraftMap
         aircraft={aircraft}
         selectedIcao24={selectedIcao24}
