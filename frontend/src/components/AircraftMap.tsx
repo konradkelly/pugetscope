@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
@@ -9,6 +9,7 @@ import {
   PUGET_SOUND_MIN_ZOOM,
 } from "../lib/config.js";
 import type { AircraftByIcao } from "../lib/useAircraftFeed.js";
+import type { MapView } from "../lib/api.js";
 import { AIRCRAFT_CLASS_ICON, AIRCRAFT_CLASS_SIZE, classifyAircraft, type AircraftClass } from "../lib/aircraftCategory.js";
 
 // OpenFreeMap's "Bright" vector basemap — free, no API key, no rate limit,
@@ -19,6 +20,14 @@ import { AIRCRAFT_CLASS_ICON, AIRCRAFT_CLASS_SIZE, classifyAircraft, type Aircra
 // if a real dark mode happens). Bright keeps real color for water/parks/
 // roads while staying calmer than the original raw-OSM raster tiles.
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
+
+// Lets a parent read/apply the current camera without knowing anything
+// about MapLibre itself — App.tsx uses this to save/restore a logged-in
+// user's preferred view (see api.ts's getMapView/saveMapView).
+export interface AircraftMapHandle {
+  getView(): MapView | null;
+  setView(view: MapView): void;
+}
 
 interface Props {
   aircraft: AircraftByIcao;
@@ -74,14 +83,10 @@ function createPendingPinElement(): HTMLDivElement {
   return el;
 }
 
-export function AircraftMap({
-  aircraft,
-  selectedIcao24,
-  onSelect,
-  pinDropMode,
-  onPinDrop,
-  pendingPin,
-}: Props) {
+export const AircraftMap = forwardRef<AircraftMapHandle, Props>(function AircraftMap(
+  { aircraft, selectedIcao24, onSelect, pinDropMode, onPinDrop, pendingPin },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
@@ -95,6 +100,27 @@ export function AircraftMap({
   // feed only carries current state, so there's no server-side history to
   // draw the trail from.
   const trailsRef = useRef<Map<string, [number, number][]>>(new Map());
+
+  // No animation — this only ever fires once, right after a logged-in
+  // user's saved view loads, not during interaction. jumpTo only touches
+  // the camera transform (not style/sources/layers), so it doesn't need to
+  // wait for map.on("load") the way addSource/addLayer below do, and it's
+  // clamped by maxBounds/minZoom automatically like any other camera move.
+  useImperativeHandle(
+    ref,
+    () => ({
+      getView() {
+        const map = mapRef.current;
+        if (!map) return null;
+        const center = map.getCenter();
+        return { lat: center.lat, lng: center.lng, zoom: map.getZoom() };
+      },
+      setView(view) {
+        mapRef.current?.jumpTo({ center: [view.lng, view.lat], zoom: view.zoom });
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -248,4 +274,4 @@ export function AircraftMap({
   }, [aircraft, selectedIcao24, onSelect]);
 
   return <div ref={containerRef} className="h-full w-full" />;
-}
+});

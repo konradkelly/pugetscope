@@ -15,9 +15,13 @@ interface Props {
   // Called once a reset actually succeeds, so App.tsx can navigate back to
   // "/" — resetToken itself is URL-derived, not state this component owns.
   onResetComplete?: () => void;
+  // Saves the map's current center/zoom as this user's default (see
+  // api.ts's saveMapView) — App.tsx owns the map ref, this panel just
+  // triggers it and shows the result.
+  onSaveMapView: () => Promise<void>;
 }
 
-export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComplete }: Props) {
+export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComplete, onSaveMapView }: Props) {
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,6 +38,9 @@ export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComp
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+
+  const [viewSaving, setViewSaving] = useState(false);
+  const [viewSaved, setViewSaved] = useState(false);
 
   const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
   const newPasswordsMatch = confirmNewPassword.length > 0 && newPassword === confirmNewPassword;
@@ -110,6 +117,17 @@ export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComp
   }
 
   if (user) {
+    async function handleSaveMapView() {
+      setViewSaving(true);
+      try {
+        await onSaveMapView();
+        setViewSaved(true);
+        setTimeout(() => setViewSaved(false), 2000);
+      } finally {
+        setViewSaving(false);
+      }
+    }
+
     return (
       <Panel className="w-full p-3 text-sm sm:w-64">
         <PanelHeader title="Account" onClose={onClose} />
@@ -125,6 +143,14 @@ export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComp
             Log out
           </button>
         </div>
+        <button
+          type="button"
+          disabled={viewSaving}
+          onClick={handleSaveMapView}
+          className="mt-2 w-full rounded bg-gray-100 py-1 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+        >
+          {viewSaving ? "Saving…" : viewSaved ? "Saved!" : "Save current map view as default"}
+        </button>
       </Panel>
     );
   }

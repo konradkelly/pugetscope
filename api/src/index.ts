@@ -11,6 +11,7 @@ import { trafficRoutes } from "./routes/traffic.js";
 import { airportsRoutes } from "./routes/airports.js";
 import { spottingsRoutes } from "./routes/spottings.js";
 import { alertsRoutes } from "./routes/alerts.js";
+import { preferencesRoutes } from "./routes/preferences.js";
 import { replayRoutes } from "./routes/replay.js";
 import { digestRoutes } from "./routes/digest.js";
 
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   await app.register(airportsRoutes);
   await app.register(spottingsRoutes);
   await app.register(alertsRoutes);
+  await app.register(preferencesRoutes);
   await app.register(replayRoutes);
   await app.register(digestRoutes);
 

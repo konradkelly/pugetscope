@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, Circle, ClipboardList, History, Newspaper, Plane, TicketsPlane, TrendingUp, User, Volume2 } from "lucide-react";
-import { AircraftMap } from "./components/AircraftMap.js";
+import { AircraftMap, type AircraftMapHandle } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
 import { AirportBoardPanel, AIRPORT_OPTIONS } from "./components/AirportBoardPanel.js";
@@ -79,6 +79,7 @@ export default function App() {
   const resetToken = route.type === "resetPassword" ? route.token : null;
   const [pinDropArmed, setPinDropArmed] = useState(false);
   const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
+  const mapHandleRef = useRef<AircraftMapHandle>(null);
 
   // Replay swaps the map's whole data source (see docs/SPEC.md §16) rather
   // than opening an overlay panel, but still rides the same exclusive
@@ -90,6 +91,21 @@ export default function App() {
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null));
   }, []);
+
+  // Keyed on `user`, not folded into the mount effect above, so this also
+  // fires on an interactive login (AuthPanel's onAuthChange) within an
+  // already-loaded session — not just the initial api.me() on page load.
+  useEffect(() => {
+    if (!user) return;
+    // Best-effort — a failed fetch should just leave the map at its
+    // default, not surface an error to the user.
+    api
+      .getMapView()
+      .then(({ view }) => {
+        if (view) mapHandleRef.current?.setView(view);
+      })
+      .catch(() => {});
+  }, [user]);
 
   // Per-route title/description so each deep-linkable page (airport board,
   // neighborhood, aircraft) is distinguishable in search results and browser
@@ -159,6 +175,7 @@ export default function App() {
   return (
     <div className="relative h-dvh w-screen">
       <AircraftMap
+        ref={mapHandleRef}
         aircraft={aircraft}
         selectedIcao24={selectedIcao24}
         onSelect={selectAircraft}
@@ -274,6 +291,10 @@ export default function App() {
               onClose={() => toggleRailPanel("auth")}
               resetToken={resetToken}
               onResetComplete={() => navigate("/")}
+              onSaveMapView={async () => {
+                const view = mapHandleRef.current?.getView();
+                if (view) await api.saveMapView(view);
+              }}
             />
           )}
         </div>

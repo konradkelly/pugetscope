@@ -17,6 +17,12 @@ export interface CurrentUser {
   email: string;
 }
 
+export interface MapView {
+  lat: number;
+  lng: number;
+  zoom: number;
+}
+
 export interface OverflightHour {
   hour: number;
   overflights: number;
@@ -325,6 +331,11 @@ export const api = {
 
   deleteSpotting: (id: number) =>
     request<void>(`/spottings/${id}`, { method: "DELETE" }),
+
+  getMapView: () => request<{ view: MapView | null }>("/preferences/map-view"),
+
+  saveMapView: (view: MapView) =>
+    request<void>("/preferences/map-view", { method: "PUT", body: JSON.stringify(view) }),
 
   subscribePush: (deviceId: string, subscription: PushSubscriptionPayload) =>
     request<void>("/alerts/subscribe", {
