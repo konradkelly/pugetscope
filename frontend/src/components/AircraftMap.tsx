@@ -11,22 +11,17 @@ import {
 import type { AircraftByIcao } from "../lib/useAircraftFeed.js";
 import type { MapView } from "../lib/api.js";
 import { AIRCRAFT_CLASS_ICON, AIRCRAFT_CLASS_SIZE, classifyAircraft, type AircraftClass } from "../lib/aircraftCategory.js";
+import { HILLSHADE_LAYER, HILLSHADE_SOURCE, HILLSHADE_SOURCE_ID, findBaseStyle, type BaseStyleId } from "../lib/basemapStyles.js";
 
-// OpenFreeMap's "Bright" vector basemap — free, no API key, no rate limit,
-// still OSM data underneath (open, no vendor lock-in — see docs/SPEC.md §6).
-// Also tried: Positron (too flat/gray), Liberty (too saturated/busy), and
-// the unlisted "dark" style (great control-room look, but would need every
-// panel restyled to match — bigger scope than a basemap swap, revisit later
-// if a real dark mode happens). Bright keeps real color for water/parks/
-// roads while staying calmer than the original raw-OSM raster tiles.
-const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/bright";
-
-// Lets a parent read/apply the current camera without knowing anything
-// about MapLibre itself — App.tsx uses this to save/restore a logged-in
-// user's preferred view (see api.ts's getMapView/saveMapView).
+// Lets a parent read/apply the current camera, basemap style, and terrain
+// overlay without knowing anything about MapLibre itself — App.tsx uses
+// this to save/restore a user's preferences (see api.ts's getMapView/
+// saveMapView/getMapStyle/saveMapStyle and docs/SPEC.md §18).
 export interface AircraftMapHandle {
   getView(): MapView | null;
   setView(view: MapView): void;
+  setBaseStyle(id: BaseStyleId): void;
+  setTerrain(enabled: boolean): void;
 }
 
 interface Props {
@@ -40,6 +35,11 @@ interface Props {
   // Renders a marker at the dropped pin so there's visible confirmation of
   // where the alert will be centered while its form is open.
   pendingPin?: { lat: number; lng: number } | null;
+  // Resolved by App.tsx from localStorage/account preferences before first
+  // render (see mapStylePreference.ts) — only ever used at construction
+  // time here; subsequent changes go through the imperative handle instead.
+  initialBaseStyle: BaseStyleId;
+  initialTerrain: boolean;
 }
 
 const TRAIL_SOURCE_ID = "flight-path";
@@ -69,6 +69,47 @@ function emptyLineCollection(): FeatureCollection {
   return { type: "FeatureCollection", features: [] };
 }
 
+// Inserting a layer with no third argument stacks it on top of the entire
+// style, above roads/labels — the opposite of "subtle relief under them."
+// This finds the first symbol (label) layer so the hillshade layer below
+// can be inserted just before it instead.
+function firstSymbolLayerId(map: maplibregl.Map): string | undefined {
+  return map.getStyle()?.layers?.find((l) => l.type === "symbol")?.id;
+}
+
+function applyTerrain(map: maplibregl.Map, enabled: boolean): void {
+  if (enabled) {
+    if (map.getSource(HILLSHADE_SOURCE_ID)) return;
+    map.addSource(HILLSHADE_SOURCE_ID, HILLSHADE_SOURCE);
+    map.addLayer(HILLSHADE_LAYER, firstSymbolLayerId(map));
+  } else {
+    if (map.getLayer(HILLSHADE_SOURCE_ID)) map.removeLayer(HILLSHADE_SOURCE_ID);
+    if (map.getSource(HILLSHADE_SOURCE_ID)) map.removeSource(HILLSHADE_SOURCE_ID);
+  }
+}
+
+// setStyle() (called on every basemap switch) wipes every runtime-added
+// source/layer, including these — verified against the installed
+// maplibre-gl source: the diffed style update fires a "style.load" event
+// after applying its add/remove ops, the same event that already fires once
+// after the map's very first style load. So this is the one place both the
+// trail line and (if active) the hillshade layer get (re-)added — see
+// docs/SPEC.md §18 for the full mechanical explanation. One visible, accepted
+// side effect: the trail line renders empty immediately after a switch until
+// the next aircraft-feed tick calls setData() again — trailsRef's in-memory
+// history isn't cleared, only the GeoJSON source object is.
+function addCustomLayers(map: maplibregl.Map, opts: { terrainEnabled: boolean }): void {
+  map.addSource(TRAIL_SOURCE_ID, { type: "geojson", data: emptyLineCollection() });
+  map.addLayer({
+    id: TRAIL_SOURCE_ID,
+    type: "line",
+    source: TRAIL_SOURCE_ID,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#7c3aed", "line-width": 2, "line-opacity": 0.7 },
+  });
+  if (opts.terrainEnabled) applyTerrain(map, true);
+}
+
 // A simple drop-pin teardrop, visually distinct from the aircraft silhouettes
 // above and from the violet "selected aircraft" color.
 const PENDING_PIN_SVG = `
@@ -84,13 +125,18 @@ function createPendingPinElement(): HTMLDivElement {
 }
 
 export const AircraftMap = forwardRef<AircraftMapHandle, Props>(function AircraftMap(
-  { aircraft, selectedIcao24, onSelect, pinDropMode, onPinDrop, pendingPin },
+  { aircraft, selectedIcao24, onSelect, pinDropMode, onPinDrop, pendingPin, initialBaseStyle, initialTerrain },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const pendingPinMarkerRef = useRef<maplibregl.Marker | null>(null);
+  // Read by the style.load handler (registered once, fires on every
+  // setStyle() call) — a ref, not the initialTerrain prop directly, since
+  // the mount effect only runs once but terrain can be toggled later via
+  // the imperative handle. Same pattern as trailsRef below.
+  const terrainEnabledRef = useRef(initialTerrain);
   // Category rarely if ever changes for a given aircraft, but it can arrive
   // a beat after the marker is first created (first update after "unknown").
   // Tracked separately from the marker so we only touch innerHTML when the
@@ -118,6 +164,14 @@ export const AircraftMap = forwardRef<AircraftMapHandle, Props>(function Aircraf
       setView(view) {
         mapRef.current?.jumpTo({ center: [view.lng, view.lat], zoom: view.zoom });
       },
+      setBaseStyle(id) {
+        mapRef.current?.setStyle(findBaseStyle(id).style);
+      },
+      setTerrain(enabled) {
+        terrainEnabledRef.current = enabled;
+        const map = mapRef.current;
+        if (map) applyTerrain(map, enabled);
+      },
     }),
     [],
   );
@@ -126,7 +180,7 @@ export const AircraftMap = forwardRef<AircraftMapHandle, Props>(function Aircraf
     if (!containerRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
+      style: findBaseStyle(initialBaseStyle).style,
       center: PUGET_SOUND_CENTER,
       zoom: PUGET_SOUND_DEFAULT_ZOOM,
       maxBounds: PUGET_SOUND_MAX_BOUNDS,
@@ -134,16 +188,11 @@ export const AircraftMap = forwardRef<AircraftMapHandle, Props>(function Aircraf
     });
     map.addControl(new maplibregl.NavigationControl(), "bottom-right");
 
-    map.on("load", () => {
-      map.addSource(TRAIL_SOURCE_ID, { type: "geojson", data: emptyLineCollection() });
-      map.addLayer({
-        id: TRAIL_SOURCE_ID,
-        type: "line",
-        source: TRAIL_SOURCE_ID,
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#7c3aed", "line-width": 2, "line-opacity": 0.7 },
-      });
-    });
+    // Fires once after the map's very first style load AND after every
+    // subsequent setStyle() call (basemap switch) — one handler covers both,
+    // see addCustomLayers's own comment for why a separate "load" handler
+    // isn't needed alongside this.
+    map.on("style.load", () => addCustomLayers(map, { terrainEnabled: terrainEnabledRef.current }));
 
     mapRef.current = map;
 

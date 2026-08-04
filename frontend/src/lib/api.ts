@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import type { BaseStyleId } from "./basemapStyles.js";
 
 export interface AircraftDetail {
   icao24: string;
@@ -21,6 +22,11 @@ export interface MapView {
   lat: number;
   lng: number;
   zoom: number;
+}
+
+export interface MapStylePref {
+  baseStyle: BaseStyleId;
+  terrain: boolean;
 }
 
 export interface OverflightHour {
@@ -336,6 +342,11 @@ export const api = {
 
   saveMapView: (view: MapView) =>
     request<void>("/preferences/map-view", { method: "PUT", body: JSON.stringify(view) }),
+
+  getMapStyle: () => request<{ style: MapStylePref | null }>("/preferences/map-style"),
+
+  saveMapStyle: (pref: MapStylePref) =>
+    request<void>("/preferences/map-style", { method: "PUT", body: JSON.stringify(pref) }),
 
   subscribePush: (deviceId: string, subscription: PushSubscriptionPayload) =>
     request<void>("/alerts/subscribe", {

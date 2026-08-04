@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Circle, ClipboardList, History, Newspaper, Plane, TicketsPlane, TrendingUp, User, Volume2 } from "lucide-react";
+import { Bell, Circle, ClipboardList, History, Layers, Newspaper, Plane, TicketsPlane, TrendingUp, User, Volume2 } from "lucide-react";
 import { AircraftMap, type AircraftMapHandle } from "./components/AircraftMap.js";
 import { AircraftDetailPanel } from "./components/AircraftDetailPanel.js";
 import { AircraftLegend } from "./components/AircraftLegend.js";
 import { AirportBoardPanel, AIRPORT_OPTIONS } from "./components/AirportBoardPanel.js";
 import { AlertsPanel } from "./components/AlertsPanel.js";
 import { AuthPanel } from "./components/AuthPanel.js";
+import { BasemapPanel } from "./components/BasemapPanel.js";
 import { DigestPanel } from "./components/DigestPanel.js";
 import { FlowBadge } from "./components/FlowBadge.js";
 import { IconRail, type RailItem } from "./components/IconRail.js";
@@ -18,8 +19,20 @@ import { useReplayPlayback } from "./lib/useReplayPlayback.js";
 import { useUrlRoute } from "./lib/useUrlRoute.js";
 import { getPageMeta } from "./lib/pageMeta.js";
 import { api, type CurrentUser } from "./lib/api.js";
+import type { BaseStyleId } from "./lib/basemapStyles.js";
+import { getStoredMapStylePref, setStoredMapStylePref } from "./lib/mapStylePreference.js";
 
-type RailPanelId = "legend" | "traffic" | "board" | "noise" | "digest" | "spotting" | "alerts" | "replay" | "auth";
+type RailPanelId =
+  | "legend"
+  | "traffic"
+  | "board"
+  | "noise"
+  | "digest"
+  | "spotting"
+  | "alerts"
+  | "replay"
+  | "basemap"
+  | "auth";
 
 // Mirrors ingestion/src/index.ts's todayLA()/yesterdayLA() and
 // ingestion/src/generateDigest.ts's copy — each service keeps its own, per
@@ -80,6 +93,12 @@ export default function App() {
   const [pinDropArmed, setPinDropArmed] = useState(false);
   const [droppedPin, setDroppedPin] = useState<{ lat: number; lng: number } | null>(null);
   const mapHandleRef = useRef<AircraftMapHandle>(null);
+  // Resolved synchronously from localStorage (not an effect) so AircraftMap's
+  // very first render already has the right initial style — no flash of the
+  // default before switching. See mapStylePreference.ts / docs/SPEC.md §18.
+  const [storedMapStylePref] = useState(getStoredMapStylePref);
+  const [baseStyle, setBaseStyleState] = useState<BaseStyleId>(storedMapStylePref.baseStyle);
+  const [terrain, setTerrainState] = useState<boolean>(storedMapStylePref.terrain);
 
   // Replay swaps the map's whole data source (see docs/SPEC.md §16) rather
   // than opening an overlay panel, but still rides the same exclusive
@@ -105,6 +124,20 @@ export default function App() {
         if (view) mapHandleRef.current?.setView(view);
       })
       .catch(() => {});
+    // Basemap style/terrain: unlike mapView, this account preference
+    // deliberately *overrides* whatever's currently showing (including a
+    // same-session local change made moments earlier) — cross-device sync
+    // is the actual point of linking this to an account. See §18.
+    api
+      .getMapStyle()
+      .then(({ style }) => {
+        if (!style) return;
+        setBaseStyleState(style.baseStyle);
+        setTerrainState(style.terrain);
+        mapHandleRef.current?.setBaseStyle(style.baseStyle);
+        mapHandleRef.current?.setTerrain(style.terrain);
+      })
+      .catch(() => {});
   }, [user]);
 
   // Per-route title/description so each deep-linkable page (airport board,
@@ -123,6 +156,7 @@ export default function App() {
     { id: "noise", icon: Volume2, label: "Neighborhood noise" },
     { id: "digest", icon: Newspaper, label: "Daily digest" },
     { id: "replay", icon: History, label: "Replay" },
+    { id: "basemap", icon: Layers, label: "Basemap style" },
     // Always visible, unlike the spotting log — this is specifically the
     // logged-out-facing engagement feature (device-scoped, no account).
     { id: "alerts", icon: Bell, label: "Alerts" },
@@ -172,6 +206,23 @@ export default function App() {
     if (!selectedIcao24) navigate(`/airport/${icao}`);
   }
 
+  // Applies immediately (no separate "save" step, unlike mapView's explicit
+  // button) — persisted to localStorage always, and to the account too when
+  // logged in, for cross-device sync. See docs/SPEC.md §18.
+  function changeBaseStyle(id: BaseStyleId) {
+    setBaseStyleState(id);
+    mapHandleRef.current?.setBaseStyle(id);
+    setStoredMapStylePref({ baseStyle: id, terrain });
+    if (user) api.saveMapStyle({ baseStyle: id, terrain }).catch(() => {});
+  }
+
+  function changeTerrain(enabled: boolean) {
+    setTerrainState(enabled);
+    mapHandleRef.current?.setTerrain(enabled);
+    setStoredMapStylePref({ baseStyle, terrain: enabled });
+    if (user) api.saveMapStyle({ baseStyle, terrain: enabled }).catch(() => {});
+  }
+
   return (
     <div className="relative h-dvh w-screen">
       <AircraftMap
@@ -185,6 +236,8 @@ export default function App() {
           setPinDropArmed(false);
         }}
         pendingPin={droppedPin}
+        initialBaseStyle={baseStyle}
+        initialTerrain={terrain}
       />
 
       {selectedIcao24 && (
@@ -282,6 +335,15 @@ export default function App() {
               onPlayPause={() => replay.setPlaying(!replay.playing)}
               onSpeedChange={replay.setSpeed}
               onClose={() => toggleRailPanel("replay")}
+            />
+          )}
+          {activeRailPanel === "basemap" && (
+            <BasemapPanel
+              baseStyle={baseStyle}
+              terrain={terrain}
+              onBaseStyleChange={changeBaseStyle}
+              onTerrainChange={changeTerrain}
+              onClose={() => toggleRailPanel("basemap")}
             />
           )}
           {activeRailPanel === "auth" && (
