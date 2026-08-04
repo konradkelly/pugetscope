@@ -1,5 +1,12 @@
 import { pool } from "../db/postgres.js";
 
+export interface CachedWatchSubscription {
+  deviceId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
 export interface CachedWatch {
   id: number;
   deviceId: string;
@@ -11,7 +18,11 @@ export interface CachedWatch {
   maxAltitudeM: number | null;
   matchValue: string | null;
   lastTriggeredAtMs: number | null;
-  subscription: { endpoint: string; p256dh: string; auth: string };
+  // One entry per device that should be notified for this watch: always the
+  // creating device (deviceId, above), plus — for an account-linked watch —
+  // every other device the same account has push-enabled. See refresh()'s
+  // query for how that fan-out is resolved.
+  subscriptions: CachedWatchSubscription[];
 }
 
 interface WatchRow {
@@ -25,6 +36,7 @@ interface WatchRow {
   max_altitude_m: number | null;
   match_value: string | null;
   last_triggered_at: string | null;
+  sub_device_id: string;
   endpoint: string;
   p256dh: string;
   auth: string;
@@ -37,24 +49,44 @@ async function refresh(): Promise<void> {
     `SELECT w.id::int, w.device_id, w.kind, w.label,
             ST_Y(w.location::geometry) AS lat, ST_X(w.location::geometry) AS lon,
             w.radius_m, w.max_altitude_m, w.match_value, w.last_triggered_at,
-            s.endpoint, s.p256dh, s.auth
+            s.device_id AS sub_device_id, s.endpoint, s.p256dh, s.auth
      FROM alert_watches w
-     JOIN push_subscriptions s ON s.device_id = w.device_id`,
+     JOIN push_subscriptions s
+       -- A watch always delivers to the device that created it (device_id
+       -- match); when it's account-linked (user_id set), it also fans out to
+       -- every other device the same account has push-enabled. This is a
+       -- single OR-join, not a UNION, so it can't produce duplicate rows —
+       -- and push_subscriptions.device_id is a PK, so each subscription row
+       -- matches a given watch at most once. Note: if two accounts log into
+       -- the same browser sequentially, the later login retags that device's
+       -- user_id, so the earlier account's other watches quietly stop
+       -- fanning out to it here — a shared-device side effect, not a bug.
+       ON s.device_id = w.device_id OR (w.user_id IS NOT NULL AND s.user_id = w.user_id)`,
   );
 
-  cache = result.rows.map((r) => ({
-    id: r.id,
-    deviceId: r.device_id,
-    kind: r.kind,
-    label: r.label,
-    lat: r.lat,
-    lon: r.lon,
-    radiusM: r.radius_m,
-    maxAltitudeM: r.max_altitude_m,
-    matchValue: r.match_value,
-    lastTriggeredAtMs: r.last_triggered_at ? new Date(r.last_triggered_at).getTime() : null,
-    subscription: { endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth },
-  }));
+  const watchesById = new Map<number, CachedWatch>();
+  for (const r of result.rows) {
+    let watch = watchesById.get(r.id);
+    if (!watch) {
+      watch = {
+        id: r.id,
+        deviceId: r.device_id,
+        kind: r.kind,
+        label: r.label,
+        lat: r.lat,
+        lon: r.lon,
+        radiusM: r.radius_m,
+        maxAltitudeM: r.max_altitude_m,
+        matchValue: r.match_value,
+        lastTriggeredAtMs: r.last_triggered_at ? new Date(r.last_triggered_at).getTime() : null,
+        subscriptions: [],
+      };
+      watchesById.set(r.id, watch);
+    }
+    watch.subscriptions.push({ deviceId: r.sub_device_id, endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth });
+  }
+
+  cache = [...watchesById.values()];
 }
 
 export function getWatches(): CachedWatch[] {
@@ -66,8 +98,14 @@ export function markTriggered(watchId: number, when: Date): void {
   if (watch) watch.lastTriggeredAtMs = when.getTime();
 }
 
+// A dead/revoked subscription only ever disqualifies the one device it
+// belongs to — a watch may still have other live subscriptions (see
+// CachedWatch.subscriptions above), so this trims the array rather than
+// dropping the watch itself.
 export function removeSubscriptionFromCache(deviceId: string): void {
-  cache = cache.filter((w) => w.deviceId !== deviceId);
+  for (const watch of cache) {
+    watch.subscriptions = watch.subscriptions.filter((s) => s.deviceId !== deviceId);
+  }
 }
 
 // A refreshed-every-60s in-memory cache, not a live query per update — watch

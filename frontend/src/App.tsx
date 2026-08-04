@@ -240,6 +240,7 @@ export default function App() {
           )}
           {activeRailPanel === "alerts" && (
             <AlertsPanel
+              user={user}
               onClose={() => toggleRailPanel("alerts")}
               pinDropArmed={pinDropArmed}
               onArmPinDrop={() => setPinDropArmed(true)}

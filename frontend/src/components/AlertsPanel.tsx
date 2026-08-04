@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { MapPin, Trash2 } from "lucide-react";
-import { api, type AlertWatch } from "../lib/api.js";
+import { api, type AlertWatch, type CurrentUser } from "../lib/api.js";
 import { getDeviceId } from "../lib/deviceId.js";
 import { ensurePushSubscription, pushSupported } from "../lib/push.js";
 import { Panel, PanelHeader } from "./Panel.js";
 
 interface Props {
+  user: CurrentUser | null;
   onClose: () => void;
   pinDropArmed: boolean;
   onArmPinDrop: () => void;
@@ -21,7 +22,7 @@ const ALTITUDE_OPTIONS_M = [
   { value: "3000", label: "Below 3000m" },
 ];
 
-export function AlertsPanel({ onClose, pinDropArmed, onArmPinDrop, droppedPin, onClearDroppedPin }: Props) {
+export function AlertsPanel({ user, onClose, pinDropArmed, onArmPinDrop, droppedPin, onClearDroppedPin }: Props) {
   const [watches, setWatches] = useState<AlertWatch[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,13 +104,21 @@ export function AlertsPanel({ onClose, pinDropArmed, onArmPinDrop, droppedPin, o
     <Panel className="w-full p-4 sm:w-80">
       <PanelHeader
         title="Alerts"
-        subtitle="Notify this browser — no account needed"
+        subtitle={user ? "Synced across your devices" : "Notify this browser — no account needed"}
         onClose={onClose}
       />
 
       {!pushSupported() && (
         <p className="mt-2 text-sm text-gray-400">
           Push notifications aren't supported in this browser.
+        </p>
+      )}
+
+      {user && pushSupported() && (
+        <p className="mt-2 text-xs text-gray-400">
+          Watches you create here notify every device where you're logged in
+          and have enabled notifications — enable them on each device you
+          want to hear from.
         </p>
       )}
 
