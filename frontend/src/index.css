@@ -15,9 +15,13 @@ body {
    tab bar fixed to the bottom edge — MapLibre's own NavigationControl
    (added via addControl(..., "bottom-right") in AircraftMap.tsx) doesn't
    know about it, so it needs a matching offset to stay above the bar
-   instead of sitting behind it. */
+   instead of sitting behind it. `!important` because maplibre-gl.css is
+   imported later in the bundle (from AircraftMap.tsx, after this file's
+   import in main.tsx) and its own `.maplibregl-ctrl-bottom-right { bottom:
+   0 }` base rule has equal specificity, so it would otherwise win on
+   source order and silently cancel any offset here. */
 @media (max-width: 639px) {
   .maplibregl-ctrl-bottom-right {
-    bottom: 64px;
+    bottom: 76px !important;
   }
 }
