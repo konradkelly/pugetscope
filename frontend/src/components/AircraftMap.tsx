@@ -48,11 +48,19 @@ const MARKER_COLOR = "text-sky-600";
 const SELECTED_MARKER_COLOR = "text-violet-600";
 
 // Size/shape vary by ADS-B category (see aircraftCategory.ts); color still
-// carries selection state, same as before this was added.
+// carries selection state, same as before this was added. A white outline
+// (not just the drop-shadow) keeps the icon readable against any basemap —
+// added when satellite imagery replaced the topographic style specifically
+// because its wide color range (dark forest, bright pavement, water,
+// rooftops) could otherwise swallow a small marker's contrast (docs/SPEC.md
+// §18). paint-order="stroke" draws the stroke first so the fill covers its
+// inner half — a clean outline rather than a stroke that bleeds outward and
+// blurs the silhouette. The child <path> elements set no fill/stroke of
+// their own, so both inherit from these root attributes.
 function markerSvgMarkup(cls: AircraftClass): string {
   const size = AIRCRAFT_CLASS_SIZE[cls];
   return `
-    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" class="${MARKER_COLOR} drop-shadow">
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="1.5" stroke-linejoin="round" paint-order="stroke" class="${MARKER_COLOR} drop-shadow">
       ${AIRCRAFT_CLASS_ICON[cls]}
     </svg>
   `;

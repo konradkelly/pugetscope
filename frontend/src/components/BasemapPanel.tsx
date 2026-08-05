@@ -43,8 +43,8 @@ export function BasemapPanel({ baseStyle, terrain, onBaseStyleChange, onTerrainC
           />
           Terrain relief
         </label>
-        {terrainDisabled && (
-          <p className="mt-1 text-xs text-gray-400">Topographic already includes its own relief shading.</p>
+        {terrainDisabled && activeStyle && (
+          <p className="mt-1 text-xs text-gray-400">{activeStyle.label} already shows real terrain detail.</p>
         )}
       </div>
     </Panel>

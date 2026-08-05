@@ -1,43 +1,51 @@
 import type { LayerSpecification, RasterDEMSourceSpecification, StyleSpecification } from "maplibre-gl";
 
-export type BaseStyleId = "bright" | "positron" | "liberty" | "dark" | "topographic";
+export type BaseStyleId = "bright" | "positron" | "liberty" | "dark" | "satellite";
 
 export interface BaseStyleOption {
   id: BaseStyleId;
   label: string;
   style: string | StyleSpecification;
-  // False only for "topographic" — OpenTopoMap already bakes in its own
-  // relief shading, so layering the hillshade overlay on top would just be
-  // redundant (see HILLSHADE_SOURCE_ID below).
+  // False only for "satellite" — real aerial photography already shows
+  // actual terrain shading/shadows, so layering the synthetic hillshade
+  // overlay on top would just look muddy/redundant (see HILLSHADE_SOURCE_ID
+  // below). Was true "topographic" (OpenTopoMap) before that was replaced
+  // by satellite imagery for the same reason (§18) — busy contour/vegetation
+  // colors made small aircraft markers hard to pick out.
   supportsTerrain: boolean;
 }
 
-// OpenTopoMap raster XYZ tiles — free, no API key, CORS open (verified live).
-// Community-run tile server with a fair-use policy discouraging heavy/
-// production traffic; accepted as reasonable for a low-traffic portfolio
-// project (see docs/SPEC.md §18). Not a style-JSON URL like the OpenFreeMap
-// styles below, so this is a minimal inline style object instead: one
-// raster source/layer, no sprite/glyphs needed. The attribution string is
-// picked up automatically by MapLibre's default AttributionControl (the app
-// never sets attributionControl: false), which satisfies OpenTopoMap's
-// attribution requirement with no extra UI work.
-const TOPOGRAPHIC_STYLE: StyleSpecification = {
+// Esri World Imagery — free, no API key, CORS open (verified live), sub-
+// meter resolution over US metros including Seattle. The standard free
+// satellite/aerial basemap almost every open-source map project uses.
+// Replaces an earlier OpenTopoMap ("Topographic") option: OpenTopoMap's
+// busy contour-line/vegetation coloring made small aircraft markers hard to
+// pick out, which satellite's more photographic look addresses better (see
+// docs/SPEC.md §18 — paired with a marker outline for guaranteed contrast
+// against imagery's own wide color range, not a substitute for it).
+// One honest caveat, same spirit as OpenTopoMap's fair-use policy: Esri's
+// terms position this free/keyless endpoint for general and evaluation use
+// rather than unlimited high-traffic commercial production — accepted as
+// reasonable for a low-traffic portfolio project, not a hard blocker.
+// Not a style-JSON URL, so this is a minimal inline style object instead:
+// one raster source/layer, no sprite/glyphs needed. The attribution string
+// is picked up automatically by MapLibre's default AttributionControl (the
+// app never sets attributionControl: false), same mechanism that already
+// covered OpenTopoMap's requirement.
+const SATELLITE_STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    opentopomap: {
+    "esri-world-imagery": {
       type: "raster",
       tiles: [
-        "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
-        "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
-        "https://c.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
       ],
       tileSize: 256,
-      maxzoom: 17,
-      attribution:
-        'map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors, SRTM | map style © <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+      maxzoom: 19,
+      attribution: "Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community",
     },
   },
-  layers: [{ id: "opentopomap", type: "raster", source: "opentopomap" }],
+  layers: [{ id: "esri-world-imagery", type: "raster", source: "esri-world-imagery" }],
 };
 
 // All four OpenFreeMap style URLs verified live (HTTP 200) — "dark" isn't
@@ -69,9 +77,9 @@ export const BASE_STYLES: BaseStyleOption[] = [
     supportsTerrain: true,
   },
   {
-    id: "topographic",
-    label: "Topographic",
-    style: TOPOGRAPHIC_STYLE,
+    id: "satellite",
+    label: "Satellite",
+    style: SATELLITE_STYLE,
     supportsTerrain: false,
   },
 ];

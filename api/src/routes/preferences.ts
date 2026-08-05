@@ -7,7 +7,7 @@ const MIN_ZOOM = 0;
 const MAX_ZOOM = 24;
 
 const MAP_STYLE_KEY = "mapStyle";
-const VALID_BASE_STYLES = ["bright", "positron", "liberty", "dark", "topographic"] as const;
+const VALID_BASE_STYLES = ["bright", "positron", "liberty", "dark", "satellite"] as const;
 type BaseStyleId = (typeof VALID_BASE_STYLES)[number];
 
 interface MapView {
