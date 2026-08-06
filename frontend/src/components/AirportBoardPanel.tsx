@@ -186,7 +186,7 @@ export function AirportBoardPanel({ onClose, initialAirport, onAirportChange }: 
             </p>
           )}
           {flights !== null && flights.length > 0 && (
-            <div ref={listRef} className="max-h-80 overflow-y-auto">
+            <div ref={listRef} className="relative max-h-80 overflow-y-auto">
               {flights.map((f) => (
                 <BoardRow key={`${f.callSign}-${f.scheduledTime}`} flight={f} direction={direction} />
               ))}
