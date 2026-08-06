@@ -38,6 +38,7 @@ export const config = {
     lomax: -121.9,
   },
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS ?? 30_000),
+  metricsPort: Number(process.env.METRICS_PORT ?? 9464), // prom-client's conventional default scrape port
   // Deliberately much coarser than pollIntervalMs: traffic/overflight rollups
   // re-scan the full today+yesterday `positions` window on every refresh
   // (see trafficRollup.ts/overflightRollup.ts), so running them at 30s

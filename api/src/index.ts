@@ -14,12 +14,22 @@ import { alertsRoutes } from "./routes/alerts.js";
 import { preferencesRoutes } from "./routes/preferences.js";
 import { replayRoutes } from "./routes/replay.js";
 import { digestRoutes } from "./routes/digest.js";
+import { registry, httpRequestDuration } from "./metrics.js";
 
 async function main(): Promise<void> {
   // trustProxy: requests arrive via the nginx Ingress (k8s/base/ingress.yaml),
   // so req.ip needs to come from X-Forwarded-For rather than the ingress
   // pod's own address — otherwise every client shares one rate-limit bucket.
   const app = Fastify({ logger: true, trustProxy: true });
+
+  // routeOptions.url is the route pattern (e.g. "/aircraft/:icao24"), not the
+  // resolved path — keeps the route label low-cardinality. Falls back to the
+  // raw url for unmatched routes (404s), which routeOptions doesn't have.
+  app.addHook("onResponse", async (req, reply) => {
+    httpRequestDuration
+      .labels(req.method, req.routeOptions?.url ?? req.url, String(reply.statusCode))
+      .observe(reply.elapsedTime / 1000);
+  });
 
   await app.register(cors, { origin: config.corsOrigin, credentials: true });
   await app.register(cookie);
@@ -41,6 +51,11 @@ async function main(): Promise<void> {
   await app.register(digestRoutes);
 
   app.get("/healthz", async () => ({ ok: true }));
+
+  app.get("/metrics", async (_req, reply) => {
+    reply.header("Content-Type", registry.contentType);
+    return registry.metrics();
+  });
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
 }

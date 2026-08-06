@@ -7,9 +7,16 @@ import { getSnapshot, subscriber } from "./db/redis.js";
 import { getWatches, startWatchCache } from "./alerts/cache.js";
 import { matchWatches, type LiveAircraft } from "./alerts/matching.js";
 import { sendAlertNotifications } from "./alerts/notify.js";
+import { registry, httpRequestDuration, wsConnections } from "./metrics.js";
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
+
+  app.addHook("onResponse", async (req, reply) => {
+    httpRequestDuration
+      .labels(req.method, req.routeOptions?.url ?? req.url, String(reply.statusCode))
+      .observe(reply.elapsedTime / 1000);
+  });
 
   await app.register(cors, { origin: config.corsOrigin });
   await app.register(websocketPlugin);
@@ -19,11 +26,15 @@ async function main(): Promise<void> {
   app.register(async (instance) => {
     instance.get("/live", { websocket: true }, async (socket) => {
       sockets.add(socket);
+      wsConnections.set(sockets.size);
 
       const snapshot = await getSnapshot();
       socket.send(JSON.stringify({ type: "snapshot", data: snapshot }));
 
-      socket.on("close", () => sockets.delete(socket));
+      socket.on("close", () => {
+        sockets.delete(socket);
+        wsConnections.set(sockets.size);
+      });
     });
   });
 
@@ -46,6 +57,11 @@ async function main(): Promise<void> {
   });
 
   app.get("/healthz", async () => ({ ok: true, connections: sockets.size }));
+
+  app.get("/metrics", async (_req, reply) => {
+    reply.header("Content-Type", registry.contentType);
+    return registry.metrics();
+  });
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
 }

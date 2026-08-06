@@ -9,6 +9,14 @@ import { attachRoutes } from "./enrichment/attachRoutes.js";
 import { attachAircraftType } from "./enrichment/attachAircraftType.js";
 import { startFidsRefreshWorker } from "./enrichment/fidsRefreshWorker.js";
 import { recordFlowObservations, computeFlowReadings } from "./enrichment/flowDirection.js";
+import {
+  startMetricsServer,
+  pollDuration,
+  pollTotal,
+  aircraftInRegion,
+  rollupRefreshDuration,
+  rollupRefreshSkipped,
+} from "./metrics.js";
 
 // Same UTC-anchored LA-date approach as api/src/routes/traffic.ts's
 // recentDates() (not shared — see that file's REGIONAL_AIRPORTS comment on
@@ -30,14 +38,17 @@ let rollupRefreshInFlight = false;
 
 function triggerTrafficRollupRefresh(): void {
   if (rollupRefreshInFlight) {
+    rollupRefreshSkipped.labels("traffic").inc();
     console.warn("[ingestion] skipping rollup refresh — previous cycle still in flight");
     return;
   }
   rollupRefreshInFlight = true;
+  const start = Date.now();
   refreshTrafficRollup(rollupPool, [todayLA(), yesterdayLA()])
     .catch((err) => console.error("[ingestion] rollup refresh failed:", err))
     .finally(() => {
       rollupRefreshInFlight = false;
+      rollupRefreshDuration.labels("traffic").observe((Date.now() - start) / 1000);
     });
 }
 
@@ -48,14 +59,17 @@ let overflightRollupRefreshInFlight = false;
 
 function triggerOverflightRollupRefresh(): void {
   if (overflightRollupRefreshInFlight) {
+    rollupRefreshSkipped.labels("overflight").inc();
     console.warn("[ingestion] skipping overflight rollup refresh — previous cycle still in flight");
     return;
   }
   overflightRollupRefreshInFlight = true;
+  const start = Date.now();
   refreshOverflightRollup(rollupPool, [todayLA(), yesterdayLA()])
     .catch((err) => console.error("[ingestion] overflight rollup refresh failed:", err))
     .finally(() => {
       overflightRollupRefreshInFlight = false;
+      rollupRefreshDuration.labels("overflight").observe((Date.now() - start) / 1000);
     });
 }
 
@@ -76,6 +90,7 @@ function maybeTriggerRollupRefreshes(): void {
 async function pollOnce(): Promise<void> {
   const states = await fetchPugetSoundStates();
   console.log(`[ingestion] polled ${states.length} aircraft in region`);
+  aircraftInRegion.set(states.length);
   // Attach routes (FIDS board match or own-track inference) before writing
   // to Redis, so the API/WebSocket serve origin/destination. Position
   // history (insertPositions) doesn't need routes, so it uses the raw
@@ -104,6 +119,7 @@ async function main(): Promise<void> {
   console.log(
     `[ingestion] starting, polling every ${config.pollIntervalMs}ms`,
   );
+  startMetricsServer(config.metricsPort);
   startFidsRefreshWorker();
 
   // eslint-disable-next-line no-constant-condition
@@ -111,14 +127,19 @@ async function main(): Promise<void> {
     const start = Date.now();
     try {
       await pollOnce();
+      pollTotal.labels("success").inc();
     } catch (err) {
       if (err instanceof RateLimitedError) {
+        pollTotal.labels("rate_limited").inc();
+        pollDuration.observe((Date.now() - start) / 1000);
         console.warn(`[ingestion] rate limited, backing off ${err.retryAfterSeconds}s`);
         await sleep(err.retryAfterSeconds * 1000);
         continue;
       }
+      pollTotal.labels("error").inc();
       console.error("[ingestion] poll failed:", err);
     }
+    pollDuration.observe((Date.now() - start) / 1000);
 
     const elapsed = Date.now() - start;
     const remaining = Math.max(config.pollIntervalMs - elapsed, 0);

@@ -17,7 +17,16 @@ spec:
         - name: ingestion
           image: pugetscope/ingestion:latest
           imagePullPolicy: Always
+          ports:
+            - containerPort: 9464
+              name: metrics
+          readinessProbe:
+            httpGet: { path: /healthz, port: 9464 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
           env:
+            - name: METRICS_PORT
+              value: "9464"
             - name: POSTGRES_USER
               valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_USER } }
             - name: POSTGRES_PASSWORD
@@ -57,3 +66,16 @@ spec:
               # RapidAPI Ultra plan (60k units/mo, 2 units/call): KSEA ~8.6k
               # calls/mo (~17.3k units) + 4 fields ~4.3k calls/mo each (~34.6k
               # units total) = ~51.8k units/mo, ~14% headroom (docs/SPEC.md §12)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion
+  namespace: pugetscope
+spec:
+  selector:
+    app: ingestion
+  ports:
+    - port: 9464
+      targetPort: 9464
+      name: metrics

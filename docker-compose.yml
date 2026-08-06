@@ -83,6 +83,8 @@ services:
       DATABASE_URL: postgres://pugetscope:pugetscope@postgres:5432/pugetscope
       REDIS_URL: redis://redis:6379
       POSTGRES_SSL: "false"
+    ports:
+      - "9464:9464" # /metrics — see ingestion/src/metrics.ts
     depends_on:
       postgres:
         condition: service_healthy
