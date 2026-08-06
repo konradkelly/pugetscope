@@ -173,27 +173,43 @@ data:
     CREATE INDEX IF NOT EXISTS spottings_user_id_icao24_idx
       ON spottings (user_id, icao24);
 
-    -- Anonymous, device-scoped push alerts — no account required. device_id is
-    -- a UUID generated client-side and kept in localStorage; knowing it is the
-    -- only "auth" a device has, the same trust model as a bearer token. Meant to
-    -- double as an on-ramp to a future real (account-based) watchlist.
+    -- Device-scoped push alerts. `device_id` is a UUID generated client-side and
+    -- kept in localStorage; knowing it is the only "auth" a device has, the same
+    -- trust model as a bearer token. Works with no account at all — `user_id`
+    -- (below) is an optional account tag layered on top: when set, it's how a
+    -- watch created on one device gets delivered to every other device the same
+    -- account has push-enabled (see websocket/src/alerts/cache.ts). `SET NULL`
+    -- rather than `CASCADE` on account deletion so a device's subscription/watches
+    -- survive losing their account link — they just fall back to device-only.
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       device_id UUID PRIMARY KEY,
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       endpoint TEXT NOT NULL,
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
-    -- One row per watch a device has created. kind picks which half of the
-    -- columns below apply: 'geofence' uses location/radius_m/max_altitude_m,
-    -- 'callsign' uses match_value (checked against the live callsign or icao24 —
-    -- see websocket/src/alerts/matching.ts). last_triggered_at drives a
-    -- per-watch cooldown so a loitering aircraft doesn't refire on every ~30s
-    -- poll (same idea as spottings' DUPLICATE_COOLDOWN_MINUTES).
+    -- Additive — table already exists in the live DB, CREATE TABLE IF NOT EXISTS
+    -- above is a no-op there, so the new column needs its own idempotent statement.
+    ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
+    CREATE INDEX IF NOT EXISTS push_subscriptions_user_id_idx
+      ON push_subscriptions (user_id) WHERE user_id IS NOT NULL;
+
+    -- One row per watch a device (or, once linked, an account) has created.
+    -- `kind` picks which half of the columns below apply: 'geofence' uses
+    -- location/radius_m/max_altitude_m, 'callsign' uses match_value (checked
+    -- against the live callsign or icao24 — see websocket/src/alerts/matching.ts).
+    -- `last_triggered_at` drives a per-watch cooldown so a loitering aircraft
+    -- doesn't refire on every ~30s poll (same idea as spottings'
+    -- DUPLICATE_COOLDOWN_MINUTES). `device_id` is always the device that created
+    -- the watch; `user_id`, when set, is who owns it — see push_subscriptions
+    -- above for why that's a nullable, optional tag rather than a replacement.
     CREATE TABLE IF NOT EXISTS alert_watches (
       id BIGSERIAL PRIMARY KEY,
       device_id UUID NOT NULL REFERENCES push_subscriptions(device_id) ON DELETE CASCADE,
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       kind TEXT NOT NULL CHECK (kind IN ('geofence', 'callsign')),
       label TEXT,
       location GEOGRAPHY(POINT, 4326),
@@ -204,8 +220,14 @@ data:
       last_triggered_at TIMESTAMPTZ
     );
 
+    -- Additive — same reasoning as push_subscriptions.user_id above.
+    ALTER TABLE alert_watches ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
     CREATE INDEX IF NOT EXISTS alert_watches_device_id_idx
       ON alert_watches (device_id);
+
+    CREATE INDEX IF NOT EXISTS alert_watches_user_id_idx
+      ON alert_watches (user_id) WHERE user_id IS NOT NULL;
 
     CREATE INDEX IF NOT EXISTS alert_watches_location_gist_idx
       ON alert_watches USING GIST (location);
