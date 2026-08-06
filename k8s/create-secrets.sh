@@ -24,11 +24,16 @@ kubectl create secret generic postgres-credentials \
   --from-literal=POSTGRES_DB="$POSTGRES_DB" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# OPENSKY_PROXY_URL is deliberately not forwarded from secrets.env here —
+# it's EC2-only (OpenSky blocks AWS IP ranges, see ingestion/src/config.ts
+# and k8s/README.md's "Known limitation" note); local k3d ingestion doesn't
+# need it and a stale value breaks local polling. create-secrets-ec2.sh
+# reads the same secrets.env's OPENSKY_PROXY_URL for the real EC2 secret.
 kubectl create secret generic opensky-credentials \
   --namespace pugetscope \
   --from-literal=OPENSKY_CLIENT_ID="$OPENSKY_CLIENT_ID" \
   --from-literal=OPENSKY_CLIENT_SECRET="$OPENSKY_CLIENT_SECRET" \
-  --from-literal=OPENSKY_PROXY_URL="${OPENSKY_PROXY_URL:-}" \
+  --from-literal=OPENSKY_PROXY_URL="" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Optional — AERODATABOX_API_KEY may be blank in secrets.env (FIDS disabled).
