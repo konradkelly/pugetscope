@@ -13,6 +13,18 @@ resources:
   - websocket-deployment.yaml
   - frontend-deployment.yaml
   - ingress.yaml
-  - postgres-configmap.yaml
   - umami-postgres.yaml
   - umami-deployment.yaml
+
+# Generated from db/init/001_schema.sql — the same file local dev
+# (docker-compose) seeds Postgres from — rather than a hand-maintained copy,
+# so the two can't drift the way they once did (prod's copy silently missed
+# a migration for weeks). The content-hash suffix this produces is load-
+# bearing: it's what makes `kubectl delete job/schema-init && kubectl apply -k
+# ...` (see k8s/up-ec2.sh) actually pick up a schema change instead of
+# reusing a stale mount.
+configMapGenerator:
+  - name: postgres-init
+    namespace: pugetscope
+    files:
+      - ../../db/init/001_schema.sql

@@ -29,16 +29,23 @@ log "Creating/updating secrets"
 bash k8s/create-secrets-ec2.sh
 
 log "Clearing any completed schema-init Job"
-# Jobs don't re-execute on `kubectl apply` once already Complete — the
-# postgres-init ConfigMap below can pick up new schema (it's a plain
-# resource, no hash suffix per generatorOptions in overlays/ec2), but an
-# already-completed Job with the same name is left untouched, so a schema
-# change since the last deploy would silently never reach RDS. Deleting it
-# first forces the apply below to create a fresh one that actually runs.
+# Jobs don't re-execute on `kubectl apply` once already Complete. Worse, the
+# postgres-init ConfigMap (generated from db/init/001_schema.sql, see
+# k8s/base/kustomization.yaml) gets a content-hash suffix that changes
+# whenever the schema does — re-applying the Job with a different volume
+# name would hit Kubernetes' "field is immutable" error on its pod template.
+# Deleting it first sidesteps both problems by forcing the apply below to
+# create a fresh Job that actually runs against the current schema.
 kubectl delete job/schema-init -n pugetscope --ignore-not-found
 
 log "Deploying manifests"
-kubectl apply -k k8s/overlays/ec2
+# `kubectl apply -k` can't be told to relax kustomize's "must stay under the
+# kustomization root" rule, and postgres-init's configMapGenerator reads
+# db/init/001_schema.sql from outside k8s/base on purpose (single source of
+# truth shared with docker-compose's local Postgres). Render with the
+# standalone `kubectl kustomize` subcommand, which does take that flag, and
+# apply the result instead.
+kubectl kustomize --load-restrictor=LoadRestrictionsNone k8s/overlays/ec2 | kubectl apply -f -
 
 log "Waiting for schema-init Job to complete"
 kubectl wait --namespace pugetscope --for=condition=complete job/schema-init --timeout=120s

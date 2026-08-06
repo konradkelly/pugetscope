@@ -74,7 +74,10 @@ full_setup() {
   ensure_secrets
 
   log "Deploying manifests"
-  kubectl apply -k k8s/overlays/local
+  # `kubectl apply -k` won't allow postgres-init's configMapGenerator to read
+  # db/init/001_schema.sql from outside k8s/base (see k8s/base/kustomization.yaml)
+  # — render with `kubectl kustomize`, which takes the flag to allow it, instead.
+  kubectl kustomize --load-restrictor=LoadRestrictionsNone k8s/overlays/local | kubectl apply -f -
 }
 
 # --- main -------------------------------------------------------------------
@@ -94,7 +97,10 @@ else
     fix_kubeconfig_if_needed
     build_and_push
     ensure_secrets
-    kubectl apply -k k8s/overlays/local
+    # `kubectl apply -k` won't allow postgres-init's configMapGenerator to read
+    # db/init/001_schema.sql from outside k8s/base (see k8s/base/kustomization.yaml)
+    # — render with `kubectl kustomize`, which takes the flag to allow it, instead.
+    kubectl kustomize --load-restrictor=LoadRestrictionsNone k8s/overlays/local | kubectl apply -f -
     # Only bounce the app services to pick up freshly-pushed images — leave
     # postgres/redis alone so a code redeploy never cycles the database.
     for svc in "${SERVICES[@]}"; do

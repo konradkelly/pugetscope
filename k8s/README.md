@@ -49,8 +49,10 @@ for svc in ingestion websocket api frontend; do
   docker push localhost:5000/pugetscope-$svc:latest
 done
 
-kubectl apply -k k8s/overlays/local
+kubectl kustomize --load-restrictor=LoadRestrictionsNone k8s/overlays/local | kubectl apply -f -
 ```
+
+Plain `kubectl apply -k` won't work here — `postgres-init`'s `configMapGenerator` (`base/kustomization.yaml`) reads `db/init/001_schema.sql` from outside `k8s/base` on purpose, so both files stay one source of truth instead of drifting the way they once did. That's only allowed through the standalone `kubectl kustomize` subcommand's `--load-restrictor` flag, not `apply -k`'s.
 
 `overlays/local`'s `images:` transformer remaps the bare `pugetscope/<service>:latest` names in `base/*.yaml` to the in-cluster registry `pugetscope-registry:5000/...` (the container's actual Docker network name — not `k3d-pugetscope-registry`, despite that being the convention for other k3d-managed resources). It also pulls in the `base/datastores` Kustomize Component (Postgres + Redis as in-cluster Deployments) — the `ec2` overlay deliberately doesn't, see below.
 
