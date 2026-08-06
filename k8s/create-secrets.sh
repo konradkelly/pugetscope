@@ -63,4 +63,9 @@ kubectl create secret generic umami-db-credentials \
   --from-literal=POSTGRES_DB=umami \
   --dry-run=client -o yaml | kubectl apply -f -
 
+kubectl create secret generic grafana-credentials \
+  --namespace pugetscope \
+  --from-literal=GRAFANA_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 echo "Secrets created/updated in namespace pugetscope."

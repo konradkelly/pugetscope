@@ -124,6 +124,19 @@ kubectl apply -f k8s/overlays/ec2/cluster-issuer.yaml
 
 **Known limitation: OpenSky Network appears to block AWS IP ranges.** Verified directly on both nodes and from inside pods: `auth.opensky-network.org` and `opensky-network.org` both hit a connection timeout, while unrelated HTTPS traffic (e.g. `example.com`) succeeds instantly — from the *node* itself, not just the pod network, ruling out a Flannel/security-group issue on our end. This is consistent with OpenSky blocking cloud-provider/datacenter IP ranges as an anti-scraping measure (a commonly reported behavior for that service). Practical effect: `ingestion` runs fine and reaches RDS/Redis, but its OpenSky polls fail, so no live aircraft data flows through this particular deployment. `api`/`frontend`/`websocket`, RDS/ElastiCache connectivity (including the SSL fix above), the Kustomize/ECR pipeline, and the full signup/login flow (including the `Secure` session cookie, which requires the real HTTPS domain to work at all) are all independently verified working. Options if this needs fixing: ask OpenSky for an allowlist exception, route ingestion's outbound traffic through a non-cloud egress path (e.g. a residential-IP proxy), or accept the limitation for this environment and keep relying on local dev for live-traffic testing. Not fixed here — needs a deliberate decision, not a silent workaround.
 
+## Observability
+
+Prometheus + Grafana (`k8s/base/prometheus-deployment.yaml`, `grafana-deployment.yaml`), scraping the `/metrics` endpoints already built into `api`, `websocket`, and `ingestion` (`*/src/metrics.ts`) — HTTP request rate/latency, live websocket connection count, OpenSky poll outcomes/duration, aircraft-in-region, and traffic/overflight rollup refresh duration (the query load `docs/rollup-tables.md` and the ROLLUP_REFRESH_INTERVAL_MS decoupling exist because of). A starter dashboard ("PugetScope Services") covering all of these is provisioned as code via a mounted ConfigMap, not clicked together in the UI.
+
+**Internal-only, unlike Umami** — no Ingress, no public host. Both Services are ClusterIP; reach them with:
+```
+kubectl port-forward svc/prometheus 9090:9090 -n pugetscope
+kubectl port-forward svc/grafana 3000:3000 -n pugetscope
+```
+Grafana login is `admin` / `GRAFANA_ADMIN_PASSWORD` (`k8s/secrets.env`, created by `create-secrets.sh`/`create-secrets-ec2.sh` like every other credential here). Grafana's own sqlite db (users/sessions) is an `emptyDir` — expendable, since the datasource and dashboard are reprovisioned from ConfigMaps on every pod restart regardless. Prometheus's TSDB is also an `emptyDir` (15d retention) for the same reason — scrape history is cheap to regenerate, not worth a PVC for a portfolio project's traffic volume.
+
+Exposing Grafana publicly (its own subdomain + TLS, like Umami) is a deliberate follow-up decision, not done here — an internet-reachable dashboard is a different risk posture than an internet-reachable tracking-script collector.
+
 ## Analytics
 
 Self-hosted [Umami](https://umami.is/) tracks pugetscope.com page views — neither Hostinger (registrar only) nor AWS record this out of the box. Own dedicated Postgres (`umami-postgres`, `k8s/base/umami-postgres.yaml`), deliberately separate from the main app DB and never forking to RDS — its storage needs are tiny, not worth a managed instance. `umami` itself (`k8s/base/umami-deployment.yaml`) is a public `ghcr.io` image, no ECR pull secret needed.

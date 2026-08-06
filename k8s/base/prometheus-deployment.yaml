@@ -1,0 +1,83 @@
+# Scrapes the three already-instrumented services (api/src/metrics.ts,
+# websocket/src/metrics.ts, ingestion/src/metrics.ts) by their k8s Service
+# short names — those Services exist identically in both overlays, so no
+# overlay-specific scrape config is needed. Internal-only (no Ingress): reach
+# it via `kubectl port-forward svc/prometheus 9090:9090 -n pugetscope`, same
+# convention as Umami's one-time setup step (k8s/README.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: pugetscope
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+
+    scrape_configs:
+      - job_name: api
+        static_configs:
+          - targets: ["api:3000"]
+      - job_name: websocket
+        static_configs:
+          - targets: ["websocket:3001"]
+      - job_name: ingestion
+        static_configs:
+          - targets: ["ingestion:9464"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: pugetscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.54.1
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=15d
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            # emptyDir, not a PVC: losing TSDB history on a pod restart is an
+            # acceptable tradeoff here (same tradeoff class as Grafana's
+            # sqlite db below) — dashboards/scrape config are provisioned as
+            # code, so nothing is lost that isn't trivially reproduced by
+            # letting it scrape again.
+            - name: data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet: { path: /-/ready, port: 9090 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: pugetscope
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
