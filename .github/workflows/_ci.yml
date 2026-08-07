@@ -1,0 +1,65 @@
+# Reusable job graph (on: workflow_call) shared by ci.yml (push/PR, fast
+# feedback) and deploy.yml (gates the EC2 deploy job — deploy `needs: ci`,
+# so every job appended here in later phases becomes deploy-gating with no
+# further edits to deploy.yml). See docs in the testing plan for the full
+# phase breakdown; this file currently covers Phase 1 (lint/typecheck/unit)
+# only — integration/e2e/build-images land in later phases.
+name: CI checks
+
+on:
+  workflow_call: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        service: [api, websocket, ingestion, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+
+  unit-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        service: [api, websocket, ingestion, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      - run: npm ci
+      - run: npm test

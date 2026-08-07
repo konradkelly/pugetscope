@@ -28,7 +28,15 @@ permissions:
   contents: read
 
 jobs:
+  # Reusable job graph (.github/workflows/_ci.yml) — lint/typecheck/unit
+  # today, gains integration/e2e/build-images as later testing phases land,
+  # with no further edits needed here: `deploy` below just waits on this one
+  # job name regardless of how many checks it grows to contain.
+  ci:
+    uses: ./.github/workflows/_ci.yml
+
   deploy:
+    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
