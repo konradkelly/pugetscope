@@ -1,5 +1,5 @@
 import "dotenv/config";
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -16,7 +16,10 @@ import { replayRoutes } from "./routes/replay.js";
 import { digestRoutes } from "./routes/digest.js";
 import { registry, httpRequestDuration } from "./metrics.js";
 
-async function main(): Promise<void> {
+// Split from main() so integration tests can `.inject()` against a real,
+// fully-wired app without binding a port — main() below is the only caller
+// that also listens.
+export async function buildApp(): Promise<FastifyInstance> {
   // trustProxy: requests arrive via the nginx Ingress (k8s/base/ingress.yaml),
   // so req.ip needs to come from X-Forwarded-For rather than the ingress
   // pod's own address — otherwise every client shares one rate-limit bucket.
@@ -57,6 +60,11 @@ async function main(): Promise<void> {
     return registry.metrics();
   });
 
+  return app;
+}
+
+async function main(): Promise<void> {
+  const app = await buildApp();
   await app.listen({ port: config.port, host: "0.0.0.0" });
 }
 

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import websocketPlugin from "@fastify/websocket";
 import { config } from "./config.js";
@@ -9,7 +9,11 @@ import { matchWatches, type LiveAircraft } from "./alerts/matching.js";
 import { sendAlertNotifications } from "./alerts/notify.js";
 import { registry, httpRequestDuration, wsConnections } from "./metrics.js";
 
-async function main(): Promise<void> {
+// Split from main() so integration tests can `.inject()` against a real,
+// fully-wired app without binding a port — main() below is the only caller
+// that also listens. Redis subscriber/watch-cache wiring lives in here too
+// (not main()) so a test gets full prod parity, not just the HTTP surface.
+export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
 
   app.addHook("onResponse", async (req, reply) => {
@@ -63,6 +67,11 @@ async function main(): Promise<void> {
     return registry.metrics();
   });
 
+  return app;
+}
+
+async function main(): Promise<void> {
+  const app = await buildApp();
   await app.listen({ port: config.port, host: "0.0.0.0" });
 }
 
