@@ -22,7 +22,9 @@ const DIGEST_RE = /^\/digest\/(\d{4}-\d{2}-\d{2})$/;
 // api/src/auth/passwordReset.ts) — no characters here need URL escaping.
 const RESET_PASSWORD_RE = /^\/reset-password\/([A-Za-z0-9_-]+)$/;
 
-function parseRoute(pathname: string): UrlRoute {
+// Exported for unit testing (frontend/src/lib/useUrlRoute.test.ts) — the
+// only pure logic in this module, everything else is History API plumbing.
+export function parseRoute(pathname: string): UrlRoute {
   const aircraftMatch = pathname.match(AIRCRAFT_RE);
   if (aircraftMatch) return { type: "aircraft", icao24: aircraftMatch[1].toLowerCase() };
 

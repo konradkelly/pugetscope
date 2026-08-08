@@ -25,7 +25,9 @@ const ROLLUP_SCOPES: RollupScope[] = [
 // LA-day (and hour) bucketing happens in SQL via `AT TIME ZONE
 // 'America/Los_Angeles'` in the SELECT/GROUP BY below, so a few extra edge
 // rows just get read and then correctly excluded, never counted wrong.
-function utcRangeForLaDates(dates: string[]): { start: Date; end: Date } {
+// Exported for unit testing (trafficRollup.test.ts) — the DST-padding math
+// is the one part of this file worth covering without a real Postgres.
+export function utcRangeForLaDates(dates: string[]): { start: Date; end: Date } {
   const sorted = [...dates].sort();
   const minDate = sorted[0];
   const maxDate = sorted[sorted.length - 1];

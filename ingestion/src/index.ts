@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { config } from "./config.js";
+import { todayLA, yesterdayLA } from "./dateWindow.js";
 import { fetchPugetSoundStates, RateLimitedError } from "./openskyClient.js";
 import { writeLatestPositions, writeFlowReadings } from "./db/redis.js";
 import { insertPositions, pool, rollupPool } from "./db/postgres.js";
@@ -17,19 +18,6 @@ import {
   rollupRefreshDuration,
   rollupRefreshSkipped,
 } from "./metrics.js";
-
-// Same UTC-anchored LA-date approach as api/src/routes/traffic.ts's
-// recentDates() (not shared — see that file's REGIONAL_AIRPORTS comment on
-// the project's per-service duplication convention).
-function todayLA(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
-}
-
-function yesterdayLA(): string {
-  const [y, m, d] = todayLA().split("-").map(Number);
-  const yesterday = new Date(Date.UTC(y, m - 1, d) - 86_400_000);
-  return `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
-}
 
 // Guards against overlapping refreshes stacking up connection usage across
 // refresh cycles if Postgres is briefly slow — a skipped cycle just catches

@@ -12,7 +12,9 @@ export const NOISE_ZIPS = ["98108", "98146", "98158", "98168", "98188", "98198"]
 // Same conservative UTC padding as trafficRollup.ts's utcRangeForLaDates —
 // duplicated rather than imported, per this repo's no-shared-package
 // convention (see that file for the full DST rationale).
-function utcRangeForLaDates(dates: string[]): { start: Date; end: Date } {
+// Exported for unit testing (overflightRollup.test.ts) — same rationale as
+// trafficRollup.ts's copy of this function.
+export function utcRangeForLaDates(dates: string[]): { start: Date; end: Date } {
   const sorted = [...dates].sort();
   const minDate = sorted[0];
   const maxDate = sorted[sorted.length - 1];
