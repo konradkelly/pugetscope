@@ -142,6 +142,13 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/package-lock.json
 
+      # `ingestion` is not started here — the seed script writes fixture data
+      # directly — but compose resolves env_file for *every* service on any
+      # command without an explicit service list, so `logs` and `down` below
+      # fail without this file. It is gitignored, so CI has to create it.
+      - name: Stub ingestion env for compose
+        run: cp ingestion/.env.example ingestion/.env
+
       - name: Bring up the app stack
         run: docker compose up -d --build postgres redis api websocket frontend
 
@@ -162,6 +169,14 @@ jobs:
 
       - working-directory: e2e
         run: npm ci
+
+      # e2e/fixtures/seed.ts imports ingestion/src/db/redis.ts, which resolves
+      # `ioredis` from ingestion/node_modules. There is no root package.json or
+      # npm workspace, so installing e2e's deps alone leaves that unresolvable.
+      - name: Install ingestion deps (seed imports ingestion/src)
+        working-directory: ingestion
+        run: npm ci
+
       - working-directory: e2e
         run: npx playwright install --with-deps chromium
       - working-directory: e2e
