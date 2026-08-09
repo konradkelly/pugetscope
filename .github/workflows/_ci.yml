@@ -2,8 +2,7 @@
 # feedback) and deploy.yml (gates the EC2 deploy job — deploy `needs: ci`,
 # so every job appended here in later phases becomes deploy-gating with no
 # further edits to deploy.yml). See docs in the testing plan for the full
-# phase breakdown; this file currently covers Phase 1 (lint/typecheck/unit)
-# only — integration/e2e/build-images land in later phases.
+# phase breakdown; e2e/build-images still to come.
 name: CI checks
 
 on:
@@ -63,3 +62,52 @@ jobs:
           cache-dependency-path: ${{ matrix.service }}/package-lock.json
       - run: npm ci
       - run: npm test
+
+  # frontend has no integration tier (see the testing plan) — just the 3
+  # backend services, each against real Postgres/Redis service containers.
+  # Ports are pinned to match what every service's test:integration npm
+  # script already hardcodes for local dev (localhost:5433/6379, the same
+  # host ports docker-compose.yml publishes) — that npm script is also what
+  # this job runs, unmodified, so local and CI share one code path with no
+  # env-var overrides to keep in sync.
+  integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        service: [api, websocket, ingestion]
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: pugetscope
+          POSTGRES_PASSWORD: pugetscope
+          POSTGRES_DB: pugetscope
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U pugetscope"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      - run: npm ci
+      - run: npm run test:integration

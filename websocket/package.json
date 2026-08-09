@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.unit.config.ts",
     "test:watch": "vitest --config vitest.unit.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "cross-env DATABASE_URL=postgres://pugetscope:pugetscope@localhost:5433/pugetscope_test REDIS_URL=redis://localhost:6379/1 POSTGRES_SSL=false vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
@@ -27,6 +27,7 @@
     "@types/pg": "^8.20.0",
     "@types/web-push": "^3.6.4",
     "@types/ws": "^8.5.13",
+    "cross-env": "^10.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^4.1.10"
