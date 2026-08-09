@@ -269,6 +269,7 @@ export const AircraftMap = forwardRef<AircraftMapHandle, Props>(function Aircraf
       let marker = markers.get(icao24);
       if (!marker) {
         const el = createMarkerElement(cls);
+        el.dataset.testid = `aircraft-marker-${icao24}`;
         el.addEventListener("click", () => onSelect(icao24));
         // lngLat must be set before addTo() — the marker renders immediately
         // on add and MapLibre has nothing to project otherwise.

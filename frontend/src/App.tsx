@@ -241,7 +241,10 @@ export default function App() {
       />
 
       {selectedIcao24 && (
-        <div className="fixed inset-x-0 bottom-14 z-10 max-h-[70vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:left-auto sm:z-auto sm:max-h-none">
+        <div
+          data-testid="aircraft-detail-panel"
+          className="fixed inset-x-0 bottom-14 z-10 max-h-[70vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:right-4 sm:top-4 sm:bottom-auto sm:left-auto sm:z-auto sm:max-h-none"
+        >
           <AircraftDetailPanel
             icao24={selectedIcao24}
             live={aircraft.get(selectedIcao24)}

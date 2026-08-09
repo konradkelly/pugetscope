@@ -239,6 +239,7 @@ export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComp
         <div className="mb-2 flex gap-3">
           <button
             type="button"
+            data-testid="auth-tab-login"
             className={mode === "login" ? "font-semibold" : "text-gray-400"}
             onClick={() => setMode("login")}
           >
@@ -246,6 +247,7 @@ export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComp
           </button>
           <button
             type="button"
+            data-testid="auth-tab-signup"
             className={mode === "signup" ? "font-semibold" : "text-gray-400"}
             onClick={() => setMode("signup")}
           >
@@ -296,6 +298,7 @@ export function AuthPanel({ user, onAuthChange, onClose, resetToken, onResetComp
 
         <button
           type="submit"
+          data-testid="auth-submit"
           disabled={submitting}
           className="w-full rounded bg-sky-600 py-1 text-white hover:bg-sky-700 disabled:opacity-50"
         >

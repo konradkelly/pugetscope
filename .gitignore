@@ -13,3 +13,5 @@ terraform.tfvars
 .idea/
 k8s/secrets.env
 k8s/ec2-kubeconfig
+e2e/test-results/
+e2e/playwright-report/

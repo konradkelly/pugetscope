@@ -1,8 +1,7 @@
 # Reusable job graph (on: workflow_call) shared by ci.yml (push/PR, fast
 # feedback) and deploy.yml (gates the EC2 deploy job — deploy `needs: ci`,
 # so every job appended here in later phases becomes deploy-gating with no
-# further edits to deploy.yml). See docs in the testing plan for the full
-# phase breakdown; e2e/build-images still to come.
+# further edits to deploy.yml).
 name: CI checks
 
 on:
@@ -111,3 +110,69 @@ jobs:
           cache-dependency-path: ${{ matrix.service }}/package-lock.json
       - run: npm ci
       - run: npm run test:integration
+
+  # Proves each Dockerfile actually builds (no push — ECR push stays
+  # deploy.yml-only) before the much more expensive e2e job below runs.
+  build-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck]
+    strategy:
+      matrix:
+        service: [api, websocket, ingestion, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t pugetscope/${{ matrix.service }}:ci ./${{ matrix.service }}
+
+  # Playwright against the real composed stack (ingestion deliberately
+  # omitted — see e2e/README.md) rather than reusing build-images' output:
+  # cross-job image transfer (docker save/load, or a registry round-trip)
+  # adds real complexity for a portfolio-scale project that doesn't run CI
+  # often enough for the rebuild cost to matter. build-images still gates
+  # this job so a broken Dockerfile fails fast and cheap first.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [integration-test, build-images]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Bring up the app stack
+        run: docker compose up -d --build postgres redis api websocket frontend
+
+      - name: Wait for services to be healthy
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/healthz >/dev/null \
+              && curl -sf http://localhost:3001/healthz >/dev/null \
+              && curl -sf http://localhost:8090/ >/dev/null; then
+              echo "Stack is up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Stack did not become healthy in time" >&2
+          exit 1
+
+      - working-directory: e2e
+        run: npm ci
+      - working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - working-directory: e2e
+        run: npm run seed
+      - working-directory: e2e
+        run: npm test
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
