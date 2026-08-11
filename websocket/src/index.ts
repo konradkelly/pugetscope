@@ -32,13 +32,22 @@ export async function buildApp(): Promise<FastifyInstance> {
       sockets.add(socket);
       wsConnections.set(sockets.size);
 
-      const snapshot = await getSnapshot();
-      socket.send(JSON.stringify({ type: "snapshot", data: snapshot }));
-
       socket.on("close", () => {
         sockets.delete(socket);
         wsConnections.set(sockets.size);
       });
+
+      try {
+        const snapshot = await getSnapshot();
+        socket.send(JSON.stringify({ type: "snapshot", data: snapshot }));
+      } catch (err) {
+        // A hung/dead Redis connection would otherwise leave the socket
+        // open with no data ever sent — close it so the frontend's
+        // existing reconnect-on-close logic (useAircraftFeed.ts) retries
+        // instead of the client waiting on a connection that looks open.
+        app.log.error({ err }, "failed to send initial snapshot, closing socket");
+        socket.close();
+      }
     });
   });
 
