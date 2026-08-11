@@ -89,9 +89,13 @@ export function nearestRegionalAirport(
 // At 3km -> ~480m, at 16km -> ~1260m (catches the SWA3051 case), at the 25km
 // edge -> ~1800m. No runway/terrain data, so this is height-above-sea-level;
 // fine for Puget Sound's near-sea-level fields, would need real AGL elsewhere.
-const APPROACH_ALT_MARGIN_M = 300;
-const GLIDESLOPE_M_PER_KM = 60;
-const CLIMB_DESCENT_THRESHOLD_MS = 1;
+// Exported because db/trafficRollup.ts replicates this same gate in SQL (it
+// scores stored `positions` rows rather than live StateVectors, so it can't
+// call inferFlightPhase directly). Keeping the constants in one place is what
+// stops the two implementations drifting apart.
+export const APPROACH_ALT_MARGIN_M = 300;
+export const GLIDESLOPE_M_PER_KM = 60;
+export const CLIMB_DESCENT_THRESHOLD_MS = 1;
 
 function maxApproachAltitude(distanceKm: number): number {
   return APPROACH_ALT_MARGIN_M + GLIDESLOPE_M_PER_KM * distanceKm;

@@ -1,21 +1,71 @@
 import type pg from "pg";
-import { REGIONAL_AIRPORTS } from "../enrichment/regionalAirports.js";
+import {
+  APPROACH_ALT_MARGIN_M,
+  CLIMB_DESCENT_THRESHOLD_MS,
+  GLIDESLOPE_M_PER_KM,
+  REGIONAL_AIRPORTS,
+} from "../enrichment/regionalAirports.js";
 
-// Mirrors REGIONAL_AIRPORTS (icao/lat/lon/approachRadiusKm) plus a spatial-
-// filter-free 'REGION' scope — see api/src/routes/traffic.ts's own
-// REGIONAL_AIRPORTS for why this list isn't shared as a package.
-interface RollupScope {
-  scope: string;
-  spatial: { lat: number; lon: number; radiusM: number } | null;
-}
+// Per-airport attribution deliberately mirrors inferFlightPhase()
+// (enrichment/regionalAirports.ts), which is what the flow badge already
+// uses. It can't be called directly here — that works on live StateVectors,
+// this scores stored `positions` rows — so the same three rules are
+// expressed in SQL against the columns postgres.ts writes
+// (altitude = geoAltitude ?? baroAltitude, vertical_speed = verticalRate):
+//
+//   1. NEAREST FIELD WINS. Previously a row counted for *every* airport whose
+//      radius contained it. KSEA/KBFI/KRNT sit 7.6-8.9km apart with 25/12/8km
+//      radii, so each field's reference point falls inside its neighbours'
+//      circles — a single SEA arrival was counted as traffic at all three,
+//      inflating the two small fields far more than SEA (they have less real
+//      traffic for the leak to hide in).
+//   2. DISTANCE-AWARE ALTITUDE GATE. Previously absent entirely, so an
+//      airliner cruising over Seattle at 10,000m counted as Boeing Field
+//      traffic. Allowed altitude grows with distance to model an approach
+//      path: ~600m at 5km out, ~1800m at the 25km edge.
+//   3. CLIMBING OR DESCENDING. Level flight through the corridor is a
+//      transit, not an operation. Counts are COUNT(DISTINCT icao24) per
+//      day/hour, so an aircraft that genuinely operated at a field only needs
+//      one qualifying sample — it will have many.
+//
+// The gate is applied BEFORE nearest-wins on purpose: an aircraft descending
+// into SEA over the top of BFI fails BFI's tighter ceiling but passes SEA's,
+// and should count for SEA rather than being discarded because BFI happened
+// to be closer.
+//
+// REGION is deliberately left ungated — "distinct aircraft seen anywhere in
+// the coverage area" is a different question, and correct as it was. Airport
+// scopes therefore do not sum to REGION, the same way hourly rows don't sum
+// to their daily row (see docs/rollup-tables.md).
+const AIRPORT_SCOPES = REGIONAL_AIRPORTS.map((a) => a.icao);
+const AIRPORT_LATS = REGIONAL_AIRPORTS.map((a) => a.lat);
+const AIRPORT_LONS = REGIONAL_AIRPORTS.map((a) => a.lon);
+const AIRPORT_RADII_M = REGIONAL_AIRPORTS.map((a) => a.approachRadiusKm * 1000);
 
-const ROLLUP_SCOPES: RollupScope[] = [
-  ...REGIONAL_AIRPORTS.map((a) => ({
-    scope: a.icao,
-    spatial: { lat: a.lat, lon: a.lon, radiusM: a.approachRadiusKm * 1000 },
-  })),
-  { scope: "REGION", spatial: null },
-];
+// Shared by the daily and hourly upserts. Emits one row per stored position
+// that looks like an operation, attributed to exactly one field.
+const ATTRIBUTION_CTE = `
+  airports AS (
+    SELECT * FROM unnest($4::text[], $5::float8[], $6::float8[], $7::float8[])
+      AS t(scope, lat, lon, radius_m)
+  ),
+  near AS (
+    SELECT p.id, p.icao24, p.recorded_at, p.altitude, a.scope,
+           ST_Distance(p.position, ST_MakePoint(a.lon, a.lat)::geography) AS dist_m
+    FROM positions p
+    JOIN airports a
+      ON ST_DWithin(p.position, ST_MakePoint(a.lon, a.lat)::geography, a.radius_m)
+    WHERE p.recorded_at >= $1 AND p.recorded_at < $2
+      AND p.altitude IS NOT NULL
+      AND p.vertical_speed IS NOT NULL
+      AND abs(p.vertical_speed) >= $10
+  ),
+  attributed AS (
+    SELECT DISTINCT ON (id) id, icao24, recorded_at, scope
+    FROM near
+    WHERE altitude <= $8 + $9 * (dist_m / 1000.0)
+    ORDER BY id, dist_m
+  )`;
 
 // Conservative UTC padding around the requested LA calendar-date range,
 // rather than exact DST-aware boundary math: Pacific time is either UTC-7
@@ -42,52 +92,87 @@ export function utcRangeForLaDates(dates: string[]): { start: Date; end: Date } 
   return { start, end };
 }
 
+// Both upserts write a row for every (scope, date[, hour]) combination in
+// range, defaulting to 0 via the grid LEFT JOIN rather than emitting nothing.
+// A pure "insert what we counted" upsert would leave a previously-written
+// higher number in place whenever a combination legitimately drops to zero —
+// which is exactly what the stricter attribution above now causes for the
+// small fields. Writing explicit zeroes keeps the tables self-healing without
+// a DELETE, so this stays a plain upsert and safe to run concurrently.
+function queryParams(start: Date, end: Date, dates: string[]): unknown[] {
+  return [
+    start, end, dates,
+    AIRPORT_SCOPES, AIRPORT_LATS, AIRPORT_LONS, AIRPORT_RADII_M,
+    APPROACH_ALT_MARGIN_M, GLIDESLOPE_M_PER_KM, CLIMB_DESCENT_THRESHOLD_MS,
+  ];
+}
+
 async function upsertDaily(
   client: pg.PoolClient,
-  { scope, spatial }: RollupScope,
   start: Date,
   end: Date,
+  dates: string[],
 ): Promise<void> {
-  const spatialFilter = spatial ? "AND ST_DWithin(p.position, ST_MakePoint($4, $5)::geography, $6)" : "";
-  const params = spatial
-    ? [scope, start, end, spatial.lon, spatial.lat, spatial.radiusM]
-    : [scope, start, end];
-
   await client.query(
-    `INSERT INTO traffic_daily_counts (scope, date, flights)
-     SELECT $1, (p.recorded_at AT TIME ZONE 'America/Los_Angeles')::date AS date,
-            COUNT(DISTINCT p.icao24) AS flights
-     FROM positions p
-     WHERE p.recorded_at >= $2 AND p.recorded_at < $3
-       ${spatialFilter}
-     GROUP BY date
+    `WITH ${ATTRIBUTION_CTE},
+     counts AS (
+       SELECT scope, (recorded_at AT TIME ZONE 'America/Los_Angeles')::date AS date,
+              COUNT(DISTINCT icao24) AS flights
+       FROM attributed GROUP BY 1, 2
+       UNION ALL
+       SELECT 'REGION', (p.recorded_at AT TIME ZONE 'America/Los_Angeles')::date,
+              COUNT(DISTINCT p.icao24)
+       FROM positions p
+       WHERE p.recorded_at >= $1 AND p.recorded_at < $2
+       GROUP BY 2
+     ),
+     grid AS (
+       SELECT s.scope, d.date
+       FROM unnest($4::text[] || ARRAY['REGION']) AS s(scope)
+       CROSS JOIN unnest($3::date[]) AS d(date)
+     )
+     INSERT INTO traffic_daily_counts (scope, date, flights)
+     SELECT g.scope, g.date, COALESCE(c.flights, 0)
+     FROM grid g
+     LEFT JOIN counts c ON c.scope = g.scope AND c.date = g.date
      ON CONFLICT (scope, date) DO UPDATE SET flights = EXCLUDED.flights`,
-    params,
+    queryParams(start, end, dates),
   );
 }
 
 async function upsertHourly(
   client: pg.PoolClient,
-  { scope, spatial }: RollupScope,
   start: Date,
   end: Date,
+  dates: string[],
 ): Promise<void> {
-  const spatialFilter = spatial ? "AND ST_DWithin(p.position, ST_MakePoint($4, $5)::geography, $6)" : "";
-  const params = spatial
-    ? [scope, start, end, spatial.lon, spatial.lat, spatial.radiusM]
-    : [scope, start, end];
-
   await client.query(
-    `INSERT INTO traffic_hourly_counts (scope, date, hour, flights)
-     SELECT $1, (p.recorded_at AT TIME ZONE 'America/Los_Angeles')::date AS date,
-            EXTRACT(HOUR FROM p.recorded_at AT TIME ZONE 'America/Los_Angeles')::int AS hour,
-            COUNT(DISTINCT p.icao24) AS flights
-     FROM positions p
-     WHERE p.recorded_at >= $2 AND p.recorded_at < $3
-       ${spatialFilter}
-     GROUP BY date, hour
+    `WITH ${ATTRIBUTION_CTE},
+     counts AS (
+       SELECT scope, (recorded_at AT TIME ZONE 'America/Los_Angeles')::date AS date,
+              EXTRACT(HOUR FROM recorded_at AT TIME ZONE 'America/Los_Angeles')::int AS hour,
+              COUNT(DISTINCT icao24) AS flights
+       FROM attributed GROUP BY 1, 2, 3
+       UNION ALL
+       SELECT 'REGION', (p.recorded_at AT TIME ZONE 'America/Los_Angeles')::date,
+              EXTRACT(HOUR FROM p.recorded_at AT TIME ZONE 'America/Los_Angeles')::int,
+              COUNT(DISTINCT p.icao24)
+       FROM positions p
+       WHERE p.recorded_at >= $1 AND p.recorded_at < $2
+       GROUP BY 2, 3
+     ),
+     grid AS (
+       SELECT s.scope, d.date, h.hour
+       FROM unnest($4::text[] || ARRAY['REGION']) AS s(scope)
+       CROSS JOIN unnest($3::date[]) AS d(date)
+       CROSS JOIN generate_series(0, 23) AS h(hour)
+     )
+     INSERT INTO traffic_hourly_counts (scope, date, hour, flights)
+     SELECT g.scope, g.date, g.hour, COALESCE(c.flights, 0)
+     FROM grid g
+     LEFT JOIN counts c ON c.scope = g.scope AND c.date = g.date AND c.hour = g.hour
      ON CONFLICT (scope, date, hour) DO UPDATE SET flights = EXCLUDED.flights`,
-    params,
+    queryParams(start, end, dates),
   );
 }
 
@@ -125,10 +210,8 @@ export async function refreshTrafficRollup(
     // A single reserved client for the whole refresh keeps this to one pool
     // connection regardless of statementTimeoutMs.
     await client.query(`SET statement_timeout = ${statementTimeoutMs}`);
-    for (const rollupScope of ROLLUP_SCOPES) {
-      await upsertDaily(client, rollupScope, start, end);
-      await upsertHourly(client, rollupScope, start, end);
-    }
+    await upsertDaily(client, start, end, dates);
+    await upsertHourly(client, start, end, dates);
   } finally {
     await client.query("SET statement_timeout = DEFAULT").catch(() => {});
     client.release();

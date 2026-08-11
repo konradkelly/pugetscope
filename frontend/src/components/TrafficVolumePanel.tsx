@@ -320,8 +320,9 @@ export function TrafficVolumePanel({ onClose, initialAirport }: Props) {
             );
           })}
           <p className="pt-1 text-[11px] text-gray-400">
-            Counts any aircraft within each field's approach radius, not confirmed landings —
-            traffic bound for KSEA can inflate nearby small-field counts (e.g. Renton, Boeing Field).
+            Counts aircraft that look like they operated at each field — low for their distance
+            out, climbing or descending, and attributed to the nearest field only. Inferred from
+            ADS-B, not confirmed landings.
           </p>
         </div>
       )}
