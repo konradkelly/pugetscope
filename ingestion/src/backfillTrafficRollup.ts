@@ -40,11 +40,27 @@ async function backfill(): Promise<void> {
 
   const dates = allLaDatesBetween(minDate, todayLA);
   console.log(`[backfill-rollup] backfilling ${dates.length} date(s): ${minDate} through ${todayLA}`);
+
   // Generous timeout vs. the poll loop's 5s default: this is a one-time,
-  // manually-run, watched operation covering a much wider date range than
-  // the incremental "today + yesterday" case, so each query needs more room.
+  // manually-run, watched operation, and each chunk still covers a wider
+  // range than the incremental "today + yesterday" case.
   const BACKFILL_STATEMENT_TIMEOUT_MS = 120_000;
-  await refreshTrafficRollup(pool, dates, BACKFILL_STATEMENT_TIMEOUT_MS);
+
+  // Chunked rather than one call over the whole range. The attribution join
+  // (trafficRollup.ts) costs far more per row than the bare ST_DWithin it
+  // replaced, and one query spanning every stored date overran even the
+  // timeout above. Each date's rollup is independent, so chunking is free
+  // correctness-wise and also gives progress on a long run.
+  const CHUNK_DAYS = 3;
+  for (let i = 0; i < dates.length; i += CHUNK_DAYS) {
+    const chunk = dates.slice(i, i + CHUNK_DAYS);
+    const startedAt = Date.now();
+    await refreshTrafficRollup(pool, chunk, BACKFILL_STATEMENT_TIMEOUT_MS);
+    console.log(
+      `[backfill-rollup] ${chunk[0]}..${chunk[chunk.length - 1]} ` +
+        `(${i + chunk.length}/${dates.length}) in ${Date.now() - startedAt}ms`,
+    );
+  }
   console.log("[backfill-rollup] done");
 }
 

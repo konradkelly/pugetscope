@@ -42,23 +42,40 @@ const AIRPORT_LATS = REGIONAL_AIRPORTS.map((a) => a.lat);
 const AIRPORT_LONS = REGIONAL_AIRPORTS.map((a) => a.lon);
 const AIRPORT_RADII_M = REGIONAL_AIRPORTS.map((a) => a.approachRadiusKm * 1000);
 
+// Cheapest possible pre-filter, and the one that makes this query viable at
+// all. The altitude gate is distance-dependent so it can't be applied before
+// the spatial join — but it has a hard ceiling: no field can admit an aircraft
+// higher than its own radius allows, so nothing above the largest field's
+// ceiling (KSEA: 300 + 60*25 = 1800m) can qualify anywhere. Most of the
+// region's positions are overflights at cruise, so testing this constant
+// first discards the bulk of the table before any geography math runs.
+// Without it the join computes spheroid distances for every stored position
+// against all five fields, which overran even the backfill's 120s timeout.
+const MAX_QUALIFYING_ALTITUDE_M =
+  APPROACH_ALT_MARGIN_M + GLIDESLOPE_M_PER_KM * Math.max(...REGIONAL_AIRPORTS.map((a) => a.approachRadiusKm));
+
 // Shared by the daily and hourly upserts. Emits one row per stored position
 // that looks like an operation, attributed to exactly one field.
 const ATTRIBUTION_CTE = `
-  airports AS (
-    SELECT * FROM unnest($4::text[], $5::float8[], $6::float8[], $7::float8[])
+  airports AS MATERIALIZED (
+    SELECT scope, ST_MakePoint(lon, lat)::geography AS geog, radius_m
+    FROM unnest($4::text[], $5::float8[], $6::float8[], $7::float8[])
       AS t(scope, lat, lon, radius_m)
   ),
-  near AS (
-    SELECT p.id, p.icao24, p.recorded_at, p.altitude, a.scope,
-           ST_Distance(p.position, ST_MakePoint(a.lon, a.lat)::geography) AS dist_m
+  operations AS (
+    SELECT p.id, p.icao24, p.recorded_at, p.altitude, p.position
     FROM positions p
-    JOIN airports a
-      ON ST_DWithin(p.position, ST_MakePoint(a.lon, a.lat)::geography, a.radius_m)
     WHERE p.recorded_at >= $1 AND p.recorded_at < $2
       AND p.altitude IS NOT NULL
+      AND p.altitude <= $11
       AND p.vertical_speed IS NOT NULL
       AND abs(p.vertical_speed) >= $10
+  ),
+  near AS (
+    SELECT o.id, o.icao24, o.recorded_at, o.altitude, a.scope,
+           ST_Distance(o.position, a.geog) AS dist_m
+    FROM operations o
+    JOIN airports a ON ST_DWithin(o.position, a.geog, a.radius_m)
   ),
   attributed AS (
     SELECT DISTINCT ON (id) id, icao24, recorded_at, scope
@@ -104,6 +121,7 @@ function queryParams(start: Date, end: Date, dates: string[]): unknown[] {
     start, end, dates,
     AIRPORT_SCOPES, AIRPORT_LATS, AIRPORT_LONS, AIRPORT_RADII_M,
     APPROACH_ALT_MARGIN_M, GLIDESLOPE_M_PER_KM, CLIMB_DESCENT_THRESHOLD_MS,
+    MAX_QUALIFYING_ALTITUDE_M,
   ];
 }
 
