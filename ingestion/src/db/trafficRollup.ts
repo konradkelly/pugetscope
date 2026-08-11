@@ -62,7 +62,16 @@ const ATTRIBUTION_CTE = `
     FROM unnest($4::text[], $5::float8[], $6::float8[], $7::float8[])
       AS t(scope, lat, lon, radius_m)
   ),
-  operations AS (
+  -- MATERIALIZED: without it, Postgres is free to inline this CTE into the
+  -- ST_DWithin join below and pick a plan driven by the position GIST index
+  -- instead of this filter. That index has almost no selectivity here — a
+  -- 25km radius from a centrally-located airport covers most of this small
+  -- tracking region — so an inlined plan bitmap-scans nearly the whole
+  -- positions table (confirmed against prod: ~2.6M of 4M rows matched the
+  -- bbox test, 14s+ for a single airport). Forcing materialization computes
+  -- this ~85k-row filtered set first (recorded_at index, <1s), then the
+  -- spatial join below is a cheap nested loop with no index needed at all.
+  operations AS MATERIALIZED (
     SELECT p.id, p.icao24, p.recorded_at, p.altitude, p.position
     FROM positions p
     WHERE p.recorded_at >= $1 AND p.recorded_at < $2
