@@ -55,7 +55,38 @@ export async function refreshOverflightRollup(
   try {
     await client.query(`SET statement_timeout = ${statementTimeoutMs}`);
     await client.query(
-      `INSERT INTO overflight_hourly_counts
+      // positions.position and zip_boundaries.boundary are both GEOGRAPHY —
+      // ST_Intersects on geography runs real spheroid math per call, which
+      // is measurably more expensive than the equivalent planar GEOMETRY
+      // test. At this table's scale (a couple hundred thousand rows in the
+      // 2-day window) that difference alone was enough to blow the poll
+      // loop's 5s budget: confirmed against prod, geography took 20s+
+      // (timed out), the geometry-cast equivalent took ~1.7s. Puget Sound is
+      // small enough that planar vs. spheroid intersects agree here — the
+      // distinction only matters at scales this data never reaches.
+      //
+      // Also joins against a MATERIALIZED single ST_Union of the 6 curated
+      // zips first (candidates), instead of the original per-zip join, which
+      // repeated the same recorded_at + spatial index scan once per zip (6x
+      // redundant work — confirmed the raw per-zip join alone, even with the
+      // geometry cast, still timed out at 20s). Attribution to the specific
+      // zcta5 then runs as a cheap second pass against that small candidate
+      // set, same two-stage shape as trafficRollup.ts's fix for the same
+      // class of problem.
+      `WITH target_zips AS MATERIALIZED (
+         SELECT zcta5, boundary::geometry AS boundary
+         FROM zip_boundaries WHERE zcta5 = ANY($3)
+       ),
+       zips_union AS MATERIALIZED (
+         SELECT ST_Union(boundary) AS boundary FROM target_zips
+       ),
+       candidates AS MATERIALIZED (
+         SELECT p.icao24, p.recorded_at, p.altitude, p.position::geometry AS position
+         FROM positions p, zips_union u
+         WHERE p.recorded_at >= $1 AND p.recorded_at < $2
+           AND ST_Intersects(p.position::geometry, u.boundary)
+       )
+       INSERT INTO overflight_hourly_counts
          (zcta5, date, hour, overflights, altitude_sum, altitude_count, min_altitude)
        SELECT
          z.zcta5,
@@ -65,10 +96,8 @@ export async function refreshOverflightRollup(
          COALESCE(SUM(p.altitude), 0) AS altitude_sum,
          COUNT(p.altitude) AS altitude_count,
          MIN(p.altitude) AS min_altitude
-       FROM positions p
-       JOIN zip_boundaries z ON ST_Intersects(p.position, z.boundary)
-       WHERE p.recorded_at >= $1 AND p.recorded_at < $2
-         AND z.zcta5 = ANY($3)
+       FROM candidates p
+       JOIN target_zips z ON ST_Intersects(p.position, z.boundary)
        GROUP BY z.zcta5, date, hour
        ON CONFLICT (zcta5, date, hour) DO UPDATE SET
          overflights = EXCLUDED.overflights,
