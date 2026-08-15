@@ -38,15 +38,6 @@ module "rds" {
   allocated_storage_gb = var.rds_allocated_storage_gb
 }
 
-module "elasticache" {
-  source = "./modules/elasticache"
-
-  project            = var.project
-  private_subnet_ids = module.vpc.private_subnet_ids
-  security_group_id  = module.security_groups.redis_sg_id
-  node_type          = var.redis_node_type
-}
-
 module "ses" {
   source = "./modules/ses"
 

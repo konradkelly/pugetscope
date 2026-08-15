@@ -14,10 +14,9 @@ terraform/
   bootstrap/     # one-time: creates the S3 state bucket. Own local state.
   modules/
     vpc/               # VPC, public+private subnets (2 AZs), IGW, route tables
-    security_groups/   # k8s-nodes / rds / redis security groups
+    security_groups/   # k8s-nodes / rds security groups
     ecr/                # 4 repos (frontend/api/ingestion/websocket) + lifecycle policy
     rds/                # Postgres, Secrets Manager credential storage
-    elasticache/        # single-node Redis
     iam/                 # EC2 instance role + GitHub Actions OIDC role
     ec2/                 # K8s node instances (control-plane + worker) + Elastic IP
     route53/             # Hosted zone + apex A record for pugetscope.com
@@ -45,19 +44,21 @@ terraform apply
 ## Decisions worth knowing before you `apply`
 
 - **No NAT gateway.** K8s nodes sit in public subnets with direct IGW access
-  (locked down by the `k8s_nodes` security group); RDS/ElastiCache sit in
-  private subnets with no internet route at all. This is the cost tradeoff
-  (~$32/mo NAT gateway avoided) that requires the nodes themselves to be
+  (locked down by the `k8s_nodes` security group); RDS sits in a private
+  subnet with no internet route at all. This is the cost tradeoff (~$32/mo
+  NAT gateway avoided) that requires the nodes themselves to be
   internet-facing.
 - **No SSH by default.** `admin_cidrs` defaults to `[]`, so port 22 and the
   K8s API (6443) aren't open to anyone. The EC2 instance role includes
   `AmazonSSMManagedInstanceCore`, so use `aws ssm start-session --target
   <instance-id>` (see `terraform output k8s_node_instance_ids`) instead. Set
   `admin_cidrs = ["YOUR.IP/32"]` in `terraform.tfvars` if you want direct SSH.
-- **Single-AZ, single-node everywhere** (RDS, Redis, 1 control-plane node by
-  default). Same tradeoff SPEC.md §9 makes explicitly for the K8s control
-  plane: cheaper and simpler while the fundamentals are still being learned,
-  with HA as a deliberate later upgrade, not a default.
+- **Single-AZ, single-node RDS**, 1 control-plane node by default. Same
+  tradeoff SPEC.md §9 makes explicitly for the K8s control plane: cheaper
+  and simpler while the fundamentals are still being learned, with HA as a
+  deliberate later upgrade, not a default. Redis moved off ElastiCache to
+  an in-cluster Deployment (`k8s/base/datastores/redis-deployment.yaml`,
+  wired into `overlays/ec2`) — see that file's comments for why.
 - **PostGIS**: RDS Postgres allow-lists it, but Terraform can't run SQL.
   After the DB exists, connect (from a K8s node, once one exists — RDS isn't
   reachable from your laptop) and run:
@@ -70,9 +71,6 @@ terraform apply
   ```bash
   aws secretsmanager get-secret-value --secret-id pugetscope/rds/postgres --query SecretString --output text
   ```
-- **Redis has no AUTH/TLS.** It only ever holds latest aircraft positions
-  and pub/sub traffic (SPEC.md §7), not secrets, so the client-side TLS
-  complexity isn't worth it for v1.
 - **EC2 user-data** installs containerd + kubelet/kubeadm/kubectl (OS-level
   prep only) but does not run `kubeadm init`. Node count/sizing:
   `control_plane_count` (default 1) and `worker_count` (default 1), each

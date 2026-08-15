@@ -15,10 +15,6 @@ output "rds_secret_arn" {
   value       = module.rds.secret_arn
 }
 
-output "redis_endpoint" {
-  value = module.elasticache.endpoint
-}
-
 output "k8s_node_public_ips" {
   value = module.ec2.node_public_ips
 }

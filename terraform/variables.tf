@@ -94,13 +94,6 @@ variable "rds_allocated_storage_gb" {
   default = 20
 }
 
-# --- ElastiCache ---
-
-variable "redis_node_type" {
-  type    = string
-  default = "cache.t4g.micro"
-}
-
 # --- ECR ---
 
 variable "ecr_repository_names" {

@@ -1,7 +1,9 @@
 # Self-managed K8s on EC2 (kubeadm, see docs/SPEC.md §9 Phase 2). Points at
-# the RDS/ElastiCache endpoints from Phase 1 Terraform instead of in-cluster
-# Postgres/Redis (no datastores component here), and at ECR instead of the
-# local k3d registry.
+# the RDS endpoint from Phase 1 Terraform for Postgres, but runs Redis
+# in-cluster (just the one manifest from base/datastores, not the whole
+# Component — Postgres stays on RDS here) since it only ever holds ~7MB of
+# ephemeral latest-position/pub-sub data, cheaper than ElastiCache for
+# node compute that's already paid for. See SPEC.md §9/§10.
 #
 # Ingress host is pugetscope.com, resolving via Route 53 to the Elastic IP
 # (terraform/modules/ec2's aws_eip.ingress) — stable across node stop/start,
@@ -17,6 +19,7 @@ namespace: pugetscope
 
 resources:
   - ../../base
+  - ../../base/datastores/redis-deployment.yaml
   - schema-init-job.yaml
   - ecr-refresh-cronjob.yaml
 
@@ -29,7 +32,7 @@ configMapGenerator:
       - POSTGRES_HOST=pugetscope-postgres.cjce4w08oh69.us-west-2.rds.amazonaws.com
       - POSTGRES_PORT=5432
       - POSTGRES_SSL=true
-      - REDIS_HOST=pugetscope-redis.2mtjpt.0001.usw2.cache.amazonaws.com
+      - REDIS_HOST=redis
       - REDIS_PORT=6379
 
 images:

@@ -126,36 +126,3 @@ resource "aws_security_group_rule" "rds_egress_all" {
   cidr_blocks       = ["0.0.0.0/0"]
   security_group_id = aws_security_group.rds.id
 }
-
-resource "aws_security_group" "redis" {
-  name_prefix = "${var.project}-redis-"
-  description = "ElastiCache Redis: only reachable from K8s nodes"
-  vpc_id      = var.vpc_id
-
-  tags = {
-    Name = "${var.project}-redis"
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_security_group_rule" "redis_from_nodes" {
-  type                     = "ingress"
-  from_port                = 6379
-  to_port                  = 6379
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.k8s_nodes.id
-  security_group_id        = aws_security_group.redis.id
-  description              = "Redis from K8s nodes"
-}
-
-resource "aws_security_group_rule" "redis_egress_all" {
-  type              = "egress"
-  from_port         = 0
-  to_port           = 0
-  protocol          = "-1"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.redis.id
-}
