@@ -57,8 +57,13 @@ variable "worker_count" {
 }
 
 variable "control_plane_instance_type" {
+  # Resized from t3.medium 2026-08-15: 14-day CloudWatch CPU averaged ~8%,
+  # peaked ~30% — t3.small still clears the ec2 module's documented kubeadm
+  # minimum (>=2vCPU/2GB) with room to spare. Resized out-of-band via AWS CLI
+  # (stop/modify-instance-attribute/start), not `terraform apply`, per the
+  # dormant user_data drift note on module.ec2 (aws_instance.node) above.
   type    = string
-  default = "t3.medium"
+  default = "t3.small"
 }
 
 variable "worker_instance_type" {

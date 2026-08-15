@@ -52,6 +52,23 @@ resource "aws_instance" "node" {
   })
   user_data_replace_on_change = true
 
+  # The two live nodes predate a node-init.sh.tpl fix (conntrack/ebtables/socat,
+  # kubeadm preflight deps — SPEC.md item 8) and were patched by hand instead of
+  # via this user_data, so their real user_data attribute permanently differs
+  # from what this template now renders. Without this, user_data_replace_on_change
+  # pulls that dormant diff into ANY plan touching this resource (even
+  # unrelated changes to other nodes/attributes) and proposes replacing BOTH
+  # live nodes, tearing down the running kubeadm cluster. The packages the
+  # fixed template installs are already present on both boxes by hand, so
+  # there's nothing left to reconcile — ignore user_data here rather than
+  # let stale bookkeeping threaten a live, single-control-plane cluster with
+  # no cert/etcd backup. A real node rebuild (matching user_data for real) is
+  # deliberately deferred to the Phase 3 HA milestone (SPEC.md §9), not done
+  # incidentally via an unrelated apply.
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+
   tags = {
     Name = "${var.project}-${each.key}"
     Role = each.value.role
