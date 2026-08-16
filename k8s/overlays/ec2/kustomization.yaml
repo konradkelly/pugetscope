@@ -174,3 +174,18 @@ patches:
               spec:
                 imagePullSecrets:
                   - name: ecr-registry
+  - target:
+      kind: CronJob
+      name: aircraft-enrich
+    patch: |-
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: aircraft-enrich
+      spec:
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                imagePullSecrets:
+                  - name: ecr-registry

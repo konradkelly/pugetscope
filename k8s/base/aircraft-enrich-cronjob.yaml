@@ -1,0 +1,72 @@
+# Nightly aircraft reference-data enrichment (registration/manufacturer/
+# model/typecode/operator) — reuses the ingestion image's dist/enrich.js
+# (runEnrichment() bulk CSV pass + fillMissingAircraft() adsbdb/hexdb
+# fallback), previously only ever run by hand via `npm run enrich`.
+#
+# Why this exists: docs/SPEC.md §17.2's notable-aircraft digest fact
+# requires BOTH `aircraft.first_seen` to fall on the digest's target date
+# AND `aircraft.typecode IS NOT NULL`. With enrichment manual-only, a
+# newly-first-seen aircraft's typecode almost never got filled before its
+# one `first_seen`-matching digest window closed — the digest ships for
+# "yesterday" and never revisits a date, so a same-day enrichment run was
+# needed and wasn't happening. Root cause of notable aircraft essentially
+# never appearing. Scheduled here to run before digest-generate's 10:00 UTC
+# so any aircraft first seen on the just-elapsed LA day is enriched in time.
+#
+# Safe to run daily and idempotent: runEnrichment()'s UPDATE is unconditional
+# (not COALESCE) so it just refreshes from the source CSV each time;
+# fillMissingAircraft() only touches rows still missing a field.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aircraft-enrich
+  namespace: pugetscope
+spec:
+  # 09:00 UTC — an hour before digest-generate (10:00 UTC), comfortably
+  # after LA midnight (07:00-08:00 UTC depending on DST) so aircraft first
+  # seen on the just-elapsed LA day are already tracked rows by the time
+  # this runs.
+  schedule: "0 9 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # CSV download/scan + per-gap adsbdb/hexdb lookups (250ms apart, see
+      # fillMissingAircraft.ts) can genuinely take a few minutes as the
+      # tracked-aircraft set grows — generous over digest-generate's default.
+      activeDeadlineSeconds: 1800
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: aircraft-enrich
+              image: pugetscope/ingestion:latest
+              # See digest-cronjob.yaml for why this is explicit rather than
+              # left to the default (ec2 overlay rewrites to :ec2-latest).
+              imagePullPolicy: Always
+              command: ["node", "dist/enrich.js"]
+              env:
+                - name: POSTGRES_USER
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_USER } }
+                - name: POSTGRES_PASSWORD
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_PASSWORD } }
+                - name: POSTGRES_DB
+                  valueFrom: { secretKeyRef: { name: postgres-credentials, key: POSTGRES_DB } }
+                - name: POSTGRES_HOST
+                  valueFrom: { configMapKeyRef: { name: datastore-config, key: POSTGRES_HOST } }
+                - name: POSTGRES_PORT
+                  valueFrom: { configMapKeyRef: { name: datastore-config, key: POSTGRES_PORT } }
+                - name: POSTGRES_SSL
+                  valueFrom: { configMapKeyRef: { name: datastore-config, key: POSTGRES_SSL } }
+                - name: DATABASE_URL
+                  value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+                # loadAircraftDatabase.ts downloads the CSV from
+                # opensky-network.org, which blocks AWS-origin traffic — same
+                # proxy workaround as the ingestion Deployment (docs/SPEC.md
+                # "Fixed: OpenSky Network blocks AWS IP ranges"). No
+                # OPENSKY_CLIENT_ID/SECRET needed — enrich.ts never touches
+                # the OAuth-gated /states/all endpoint.
+                - name: OPENSKY_PROXY_URL
+                  valueFrom: { secretKeyRef: { name: opensky-credentials, key: OPENSKY_PROXY_URL, optional: true } }
