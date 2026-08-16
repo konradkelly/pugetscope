@@ -10,6 +10,7 @@ resources:
   - api-deployment.yaml
   - ingestion-deployment.yaml
   - digest-cronjob.yaml
+  - aircraft-enrich-cronjob.yaml
   - websocket-deployment.yaml
   - frontend-deployment.yaml
   - ingress.yaml

@@ -7,7 +7,9 @@ import type { DigestStats, NotableAircraft } from "./format.js";
 // is a parameter rather than a module import, matching refreshTrafficRollup()'s
 // signature, so the REGION guard below is testable without a live database.
 
-const NOTABLE_AIRCRAFT_LIMIT = 5;
+// Exported so the test suite can assert against the real constant rather
+// than duplicating the magic number.
+export const NOTABLE_AIRCRAFT_LIMIT = 5;
 
 async function loadVsLastWeek(pool: pg.Pool, date: string): Promise<number | null> {
   const { rows } = await pool.query<{ flights: number }>(
@@ -29,6 +31,17 @@ async function loadBusiestHour(pool: pg.Pool, date: string): Promise<number | nu
   return rows[0] ? Number(rows[0].hour) : null;
 }
 
+// This filter combination only surfaces anything if `typecode` is already
+// populated by the time *this exact date's* digest runs — `first_seen` is a
+// one-shot match (an aircraft only ever has one calendar day where this WHERE
+// clause can match it), so enrichment can't lag behind on a "catch up later"
+// basis the way it can for every other consumer of the `aircraft` table.
+// This used to be true in practice: aircraft-database enrichment
+// (`ingestion/src/enrich.ts`) was manual-only (`npm run enrich`), so a
+// same-day enrichment run essentially never happened and this stayed empty.
+// Fixed by k8s/base/aircraft-enrich-cronjob.yaml (0 9 * * *, ahead of
+// digest-generate's 0 10 * * *) — keep that CronJob's schedule ahead of
+// digest-generate's if either one ever moves.
 async function loadNotableAircraft(pool: pg.Pool, date: string): Promise<NotableAircraft[]> {
   const { rows } = await pool.query<NotableAircraft>(
     `SELECT icao24, registration, manufacturer, model, typecode, operator
