@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   buildExtraFacts,
   buildPrompt,
+  formatAirlineHighlight,
+  formatDelayHighlight,
+  formatDiversionHighlight,
   formatHourRange,
   formatNotableAircraft,
   formatWeekComparison,
   previousDay,
+  type AirlineHighlight,
+  type DelayHighlight,
   type DigestStats,
+  type FlightHighlight,
   type NotableAircraft,
 } from "./format.js";
 
@@ -21,6 +27,21 @@ function stats(overrides: Partial<DigestStats> = {}): DigestStats {
     vsLastWeek: null,
     busiestHour: null,
     notableAircraft: [],
+    busiestAirline: null,
+    longestDelay: null,
+    notableDiversion: null,
+    ...overrides,
+  };
+}
+
+function flightHighlight(overrides: Partial<FlightHighlight> = {}): FlightHighlight {
+  return {
+    callSign: "ASA1234",
+    flightNumber: "AS1234",
+    airlineName: "Alaska Airlines",
+    airportIcao: "KSEA",
+    direction: "arrival",
+    otherName: "San Francisco Intl",
     ...overrides,
   };
 }
@@ -141,6 +162,57 @@ describe("formatNotableAircraft", () => {
   });
 });
 
+describe("formatAirlineHighlight", () => {
+  it("pluralizes the flight count", () => {
+    const highlight: AirlineHighlight = { airlineName: "Alaska Airlines", flights: 14 };
+    expect(formatAirlineHighlight(highlight)).toBe("Alaska Airlines (14 flights)");
+  });
+
+  it("keeps a single flight singular", () => {
+    expect(formatAirlineHighlight({ airlineName: "Alaska Airlines", flights: 1 })).toBe("Alaska Airlines (1 flight)");
+  });
+});
+
+describe("formatDelayHighlight", () => {
+  it("describes an arriving flight, its origin, and the delay", () => {
+    const highlight: DelayHighlight = { ...flightHighlight(), delayMinutes: 47 };
+    expect(formatDelayHighlight(highlight)).toBe(
+      "Alaska Airlines flight AS1234 arriving at KSEA from San Francisco Intl, 47 min behind schedule",
+    );
+  });
+
+  it("describes a departing flight bound for its destination", () => {
+    const highlight: DelayHighlight = {
+      ...flightHighlight({ direction: "departure", otherName: "Los Angeles Intl" }),
+      delayMinutes: 12,
+    };
+    expect(formatDelayHighlight(highlight)).toBe(
+      "Alaska Airlines flight AS1234 departing KSEA to Los Angeles Intl, 12 min behind schedule",
+    );
+  });
+
+  it("falls back to the call sign when there's no flight number", () => {
+    const highlight: DelayHighlight = { ...flightHighlight({ flightNumber: null }), delayMinutes: 5 };
+    expect(formatDelayHighlight(highlight)).toContain("flight ASA1234 ");
+  });
+
+  it("omits the airline and other-airport clauses when absent", () => {
+    const highlight: DelayHighlight = {
+      ...flightHighlight({ airlineName: null, otherName: null }),
+      delayMinutes: 5,
+    };
+    expect(formatDelayHighlight(highlight)).toBe("flight AS1234 arriving at KSEA, 5 min behind schedule");
+  });
+});
+
+describe("formatDiversionHighlight", () => {
+  it("describes the flight and marks it diverted", () => {
+    expect(formatDiversionHighlight(flightHighlight())).toBe(
+      "Alaska Airlines flight AS1234 arriving at KSEA from San Francisco Intl, diverted",
+    );
+  });
+});
+
 // The grounding boundary. A fact that never reaches the prompt is a fact the
 // model cannot be asked to describe, so these assert on *absence* — they're
 // the mechanical half of the prompt's "never mention a comparison, busiest
@@ -155,6 +227,9 @@ describe("buildExtraFacts / buildPrompt grounding", () => {
     expect(prompt).not.toContain("last week");
     expect(prompt).not.toContain("Busiest hour");
     expect(prompt).not.toContain("First-ever tracked");
+    expect(prompt).not.toContain("Busiest airline");
+    expect(prompt).not.toContain("Longest delay");
+    expect(prompt).not.toContain("Notable diversion");
     // Nothing should leak in as a placeholder either.
     expect(prompt).not.toContain("null");
     expect(prompt).not.toContain("undefined");
@@ -162,11 +237,26 @@ describe("buildExtraFacts / buildPrompt grounding", () => {
 
   it("includes each optional statistic once it is backed by real data", () => {
     const prompt = buildPrompt(
-      stats({ totalFlights: 120, vsLastWeek: 100, busiestHour: 15, notableAircraft: [aircraft()] }),
+      stats({
+        totalFlights: 120,
+        vsLastWeek: 100,
+        busiestHour: 15,
+        notableAircraft: [aircraft()],
+        busiestAirline: { airlineName: "Alaska Airlines", flights: 14 },
+        longestDelay: { ...flightHighlight(), delayMinutes: 47 },
+        notableDiversion: flightHighlight({ callSign: "UAL500", flightNumber: "UA500" }),
+      }),
     );
     expect(prompt).toContain("Up 20 flights (20%) vs. the same day last week (100 flights).");
     expect(prompt).toContain("Busiest hour: 3PM-4PM (most distinct aircraft observed).");
     expect(prompt).toContain("First-ever tracked today: Boeing 747-8F (N850GT), operated by Atlas Air");
+    expect(prompt).toContain("Busiest airline: Alaska Airlines (14 flights).");
+    expect(prompt).toContain(
+      "Longest delay: Alaska Airlines flight AS1234 arriving at KSEA from San Francisco Intl, 47 min behind schedule.",
+    );
+    expect(prompt).toContain(
+      "Notable diversion: Alaska Airlines flight UA500 arriving at KSEA from San Francisco Intl, diverted.",
+    );
   });
 
   it("includes a partial fact set without implying the missing ones", () => {

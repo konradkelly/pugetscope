@@ -9,17 +9,24 @@ interface FakeRows {
   lastWeek?: Array<{ flights: number | string }>;
   hourly?: Array<{ hour: number | string }>;
   aircraft?: unknown[];
+  airline?: Array<{ airline_name: string; flights: number | string }>;
+  delay?: unknown[];
+  diversion?: unknown[];
 }
 
 // Dispatches on the SQL text rather than call order, since loadStats fires the
-// last three queries concurrently via Promise.all. The week-ago lookup has to
-// be matched before the generic traffic_daily_counts case — both hit that
-// table, and only the former carries the interval. Optionally records the raw
-// SQL text alongside params (seenSql) — the mock is a plain fixture dispatcher,
-// not a real query engine, so it can't validate a WHERE clause's actual
-// filtering behavior; pinning the SQL text is the only way this suite can
-// catch a regression to the query's shape (e.g. an accidentally-dropped
-// filter) without standing up a real Postgres.
+// last several queries concurrently via Promise.all. The week-ago lookup has
+// to be matched before the generic traffic_daily_counts case — both hit that
+// table, and only the former carries the interval. Same idea for the three
+// fids_daily_rollup queries: "delay_minutes" only appears in the longest-delay
+// query's SELECT/ORDER BY, and "ILIKE" only in the diversion query's WHERE, so
+// those must be checked before the generic "FROM fids_daily_rollup" fallback
+// (the busiest-airline query). Optionally records the raw SQL text alongside
+// params (seenSql) — the mock is a plain fixture dispatcher, not a real query
+// engine, so it can't validate a WHERE clause's actual filtering behavior;
+// pinning the SQL text is the only way this suite can catch a regression to
+// the query's shape (e.g. an accidentally-dropped filter) without standing up
+// a real Postgres.
 function fakePool(rows: FakeRows, seenParams: unknown[][] = [], seenSql: string[] = []) {
   return {
     query: async (sql: string, params: unknown[]) => {
@@ -29,6 +36,9 @@ function fakePool(rows: FakeRows, seenParams: unknown[][] = [], seenSql: string[
       if (sql.includes("traffic_hourly_counts")) return { rows: rows.hourly ?? [] };
       if (sql.includes("FROM aircraft")) return { rows: rows.aircraft ?? [] };
       if (sql.includes("traffic_daily_counts")) return { rows: rows.daily ?? [] };
+      if (sql.includes("delay_minutes")) return { rows: rows.delay ?? [] };
+      if (sql.includes("ILIKE")) return { rows: rows.diversion ?? [] };
+      if (sql.includes("FROM fids_daily_rollup")) return { rows: rows.airline ?? [] };
       throw new Error(`unexpected query in test: ${sql}`);
     },
   } as unknown as pg.Pool;
@@ -97,12 +107,15 @@ describe("loadStats", () => {
     expect(result.vsLastWeek).toBeNull();
     expect(result.busiestHour).toBeNull();
     expect(result.notableAircraft).toEqual([]);
+    expect(result.busiestAirline).toBeNull();
+    expect(result.longestDelay).toBeNull();
+    expect(result.notableDiversion).toBeNull();
   });
 
   it("passes the requested date to every query so the digest can't mix dates", async () => {
     const seenParams: unknown[][] = [];
     await loadStats(fakePool({ daily: REGION_100 }, seenParams), "2026-08-14");
-    expect(seenParams).toHaveLength(4);
+    expect(seenParams).toHaveLength(7);
     for (const params of seenParams) expect(params).toEqual(["2026-08-14"]);
   });
 
@@ -143,6 +156,84 @@ describe("loadStats", () => {
 
     it("caps the result at NOTABLE_AIRCRAFT_LIMIT", async () => {
       expect(await aircraftQuerySql()).toContain(`LIMIT ${NOTABLE_AIRCRAFT_LIMIT}`);
+    });
+  });
+
+  describe("§17.3 airline/delay/diversion facts (fids_daily_rollup)", () => {
+    it("coerces the busiest-airline count and passes it through", async () => {
+      const pool = fakePool({ daily: REGION_100, airline: [{ airline_name: "Alaska Airlines", flights: "14" }] });
+      const result = await loadStats(pool, "2026-08-14");
+      expect(result.busiestAirline).toEqual({ airlineName: "Alaska Airlines", flights: 14 });
+    });
+
+    it("rounds the longest-delay minutes and maps the row to a FlightHighlight", async () => {
+      const pool = fakePool({
+        daily: REGION_100,
+        delay: [
+          {
+            call_sign: "ASA1234",
+            flight_number: "AS1234",
+            airline_name: "Alaska Airlines",
+            airport_icao: "KSEA",
+            direction: "arrival",
+            other_name: "San Francisco Intl",
+            delay_minutes: "46.7",
+          },
+        ],
+      });
+      const result = await loadStats(pool, "2026-08-14");
+      expect(result.longestDelay).toEqual({
+        callSign: "ASA1234",
+        flightNumber: "AS1234",
+        airlineName: "Alaska Airlines",
+        airportIcao: "KSEA",
+        direction: "arrival",
+        otherName: "San Francisco Intl",
+        delayMinutes: 47,
+      });
+    });
+
+    it("maps a diversion row to a FlightHighlight with no delayMinutes field", async () => {
+      const pool = fakePool({
+        daily: REGION_100,
+        diversion: [
+          {
+            call_sign: "UAL500",
+            flight_number: "UA500",
+            airline_name: "United",
+            airport_icao: "KSEA",
+            direction: "departure",
+            other_name: "Denver Intl",
+          },
+        ],
+      });
+      const result = await loadStats(pool, "2026-08-14");
+      expect(result.notableDiversion).toEqual({
+        callSign: "UAL500",
+        flightNumber: "UA500",
+        airlineName: "United",
+        airportIcao: "KSEA",
+        direction: "departure",
+        otherName: "Denver Intl",
+      });
+    });
+
+    // The mock can't validate real Postgres filtering, so — same as the
+    // notable-aircraft block above — this pins the query text to catch a
+    // regression to the filter that keeps an on-time or early flight from
+    // being reported as "the longest delay."
+    it("only considers a delay genuine (revised strictly after scheduled)", async () => {
+      const seenSql: string[] = [];
+      await loadStats(fakePool({ daily: REGION_100 }, [], seenSql), "2026-08-14");
+      const sql = seenSql.find((s) => s.includes("delay_minutes"));
+      expect(sql).toContain("revised_time > scheduled_time");
+    });
+
+    it("matches diversions by substring against the status column", async () => {
+      const seenSql: string[] = [];
+      await loadStats(fakePool({ daily: REGION_100 }, [], seenSql), "2026-08-14");
+      const sql = seenSql.find((s) => s.includes("ILIKE"));
+      expect(sql).toContain("status ILIKE '%divert%'");
     });
   });
 });

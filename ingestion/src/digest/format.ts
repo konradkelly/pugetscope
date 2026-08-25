@@ -12,6 +12,27 @@ export interface NotableAircraft {
   operator: string | null;
 }
 
+// §17.3 — one row per (date, airport, airline) captured into fids_daily_rollup.
+export interface AirlineHighlight {
+  airlineName: string;
+  flights: number;
+}
+
+// §17.3 — shared identity fields for a single captured fids_daily_rollup
+// flight, used by both the delay and diversion facts below.
+export interface FlightHighlight {
+  callSign: string;
+  flightNumber: string | null;
+  airlineName: string | null;
+  airportIcao: string;
+  direction: "departure" | "arrival";
+  otherName: string | null;
+}
+
+export interface DelayHighlight extends FlightHighlight {
+  delayMinutes: number;
+}
+
 export interface DigestStats {
   date: string;
   totalFlights: number;
@@ -27,6 +48,16 @@ export interface DigestStats {
   // CONFLICT) falls on this date. Capped and restricted to rows with a
   // typecode so the digest always has something concrete to describe.
   notableAircraft: NotableAircraft[];
+  // §17.3 — airline with the most fids_daily_rollup rows this date. null when
+  // FIDS enrichment isn't configured (no AERODATABOX_API_KEY) or nothing was
+  // captured yet.
+  busiestAirline: AirlineHighlight | null;
+  // §17.3 — largest positive (revised_time - scheduled_time) gap captured
+  // this date. null when nothing qualifies as a genuine delay.
+  longestDelay: DelayHighlight | null;
+  // §17.3 — first captured flight this date whose status mentions a
+  // diversion. null when none did.
+  notableDiversion: FlightHighlight | null;
 }
 
 export interface DigestContent {
@@ -88,6 +119,28 @@ export function formatNotableAircraft(list: NotableAircraft[]): string | null {
     .join("; ");
 }
 
+export function formatAirlineHighlight(h: AirlineHighlight): string {
+  return `${h.airlineName} (${h.flights} flight${h.flights === 1 ? "" : "s"})`;
+}
+
+// Shared by the delay and diversion lines below: "<airline> flight <num>
+// arriving at/departing KSEA[ from/to <other airport>]".
+function formatFlightRef(h: FlightHighlight): string {
+  const airline = h.airlineName ? `${h.airlineName} ` : "";
+  const flight = h.flightNumber ?? h.callSign;
+  const verb = h.direction === "arrival" ? "arriving at" : "departing";
+  const other = h.otherName ? ` ${h.direction === "arrival" ? "from" : "to"} ${h.otherName}` : "";
+  return `${airline}flight ${flight} ${verb} ${h.airportIcao}${other}`;
+}
+
+export function formatDelayHighlight(h: DelayHighlight): string {
+  return `${formatFlightRef(h)}, ${h.delayMinutes} min behind schedule`;
+}
+
+export function formatDiversionHighlight(h: FlightHighlight): string {
+  return `${formatFlightRef(h)}, diverted`;
+}
+
 // Extra facts are appended as their own lines only when real data backs
 // them — an absent line means "don't mention this," not "mention it as
 // zero/unknown," matching loadStats()'s existing REGION-row guard. This is
@@ -100,11 +153,21 @@ export function buildExtraFacts(stats: DigestStats): string {
       ? `Busiest hour: ${formatHourRange(stats.busiestHour)} (most distinct aircraft observed).`
       : null;
   const notableAircraftLine = formatNotableAircraft(stats.notableAircraft);
+  const busiestAirlineLine = stats.busiestAirline
+    ? `Busiest airline: ${formatAirlineHighlight(stats.busiestAirline)}.`
+    : null;
+  const longestDelayLine = stats.longestDelay ? `Longest delay: ${formatDelayHighlight(stats.longestDelay)}.` : null;
+  const notableDiversionLine = stats.notableDiversion
+    ? `Notable diversion: ${formatDiversionHighlight(stats.notableDiversion)}.`
+    : null;
 
   return [
     formatWeekComparison(stats),
     busiestHourLine,
     notableAircraftLine ? `First-ever tracked today: ${notableAircraftLine}` : null,
+    busiestAirlineLine,
+    longestDelayLine,
+    notableDiversionLine,
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
@@ -126,6 +189,6 @@ ${extraFacts ? `\n${extraFacts}` : ""}
 
 Write:
 - headline: a short, specific news-style headline (under 12 words), using the actual numbers. Prefer the most striking fact available (a big week-over-week swing or a notable first-time aircraft), but only if one of those lines is present above.
-- body: 2-4 sentences of plain factual prose describing the day's air traffic based only on these numbers. No speculation beyond what the numbers show, and never mention a comparison, busiest hour, or aircraft that isn't explicitly listed above. No markdown.
+- body: 2-4 sentences of plain factual prose describing the day's air traffic based only on these numbers. No speculation beyond what the numbers show, and never mention a comparison, busiest hour, aircraft, airline, delay, or diversion that isn't explicitly listed above. No markdown.
 - metaDescription: one sentence (under 160 characters) summarizing the day, suitable for an HTML meta description tag.`;
 }

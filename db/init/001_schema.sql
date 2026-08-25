@@ -110,6 +110,35 @@ CREATE TABLE IF NOT EXISTS fids_refresh_state (
   last_fetched_at TIMESTAMPTZ NOT NULL
 );
 
+-- Permanent per-day capture of fids_flights rows, written alongside (not
+-- instead of) the rolling board above (docs/SPEC.md §17.3). fids_flights is
+-- deliberately never historical — replaceBoard() DELETEs a whole airport's
+-- rows every refresh, so a flight is gone from that table within hours of
+-- landing/departing, long before the next day's 10:00 UTC digest job could
+-- read it. This table is what the digest queries instead: one row per
+-- (date, airport, direction, call_sign), upserted by every refresh the
+-- flight remains visible in — not just its first sighting — so a delay that
+-- grows or a status that later flips to "Diverted" is reflected here too.
+-- `date` is the flight's LA-local scheduled day, not the day it was fetched.
+CREATE TABLE IF NOT EXISTS fids_daily_rollup (
+  date DATE NOT NULL,
+  airport_icao TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('departure', 'arrival')),
+  call_sign TEXT NOT NULL,
+  flight_number TEXT,
+  airline_name TEXT,
+  status TEXT,
+  other_name TEXT,
+  scheduled_time TIMESTAMPTZ NOT NULL,
+  revised_time TIMESTAMPTZ,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (date, airport_icao, direction, call_sign)
+);
+
+-- The digest's only access pattern: every fact for one date.
+CREATE INDEX IF NOT EXISTS fids_daily_rollup_date_idx
+  ON fids_daily_rollup (date);
+
 -- Zip code (ZCTA) boundary polygons, batch-loaded once from Census
 -- TIGERweb (ingestion/src/loadZips.ts, npm run load-zips) — a static
 -- reference dataset, not something that changes poll-to-poll. Backs
