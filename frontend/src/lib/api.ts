@@ -229,7 +229,21 @@ export interface Digest {
       typecode: string | null;
       operator: string | null;
     }>;
+    // §17.3 — absent on digests generated before these fields existed, same
+    // as the other optional stats above.
+    busiestAirline?: { airlineName: string; flights: number } | null;
+    longestDelay?: (DigestFlightHighlight & { delayMinutes: number }) | null;
+    notableDiversion?: DigestFlightHighlight | null;
   };
+}
+
+interface DigestFlightHighlight {
+  callSign: string;
+  flightNumber: string | null;
+  airlineName: string | null;
+  airportIcao: string;
+  direction: "departure" | "arrival";
+  otherName: string | null;
 }
 
 export interface AlertWatch {

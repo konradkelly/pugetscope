@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { REGIONAL_AIRPORTS } from "../enrichment/regionalAirports.js";
-import type { DigestStats, NotableAircraft } from "./format.js";
+import type { AirlineHighlight, DelayHighlight, DigestStats, FlightHighlight, NotableAircraft } from "./format.js";
 
 // Reads yesterday's already-rolled-up traffic_daily_counts (docs/rollup-tables.md)
 // rather than positions directly — cheap, proven, no new query shape. The pool
@@ -55,6 +55,78 @@ async function loadNotableAircraft(pool: pg.Pool, date: string): Promise<Notable
   return rows;
 }
 
+// §17.3 — busiest airline this date, from fids_daily_rollup (docs/SPEC.md
+// §17.3, db/init/001_schema.sql). Empty/absent whenever FIDS enrichment
+// isn't configured, matching the other optional facts' null-not-zero posture.
+async function loadBusiestAirline(pool: pg.Pool, date: string): Promise<AirlineHighlight | null> {
+  const { rows } = await pool.query<{ airline_name: string; flights: number }>(
+    `SELECT airline_name, COUNT(*) AS flights
+     FROM fids_daily_rollup
+     WHERE date = $1 AND airline_name IS NOT NULL
+     GROUP BY airline_name
+     ORDER BY flights DESC, airline_name
+     LIMIT 1`,
+    [date],
+  );
+  const row = rows[0];
+  return row ? { airlineName: row.airline_name, flights: Number(row.flights) } : null;
+}
+
+interface FlightHighlightRow {
+  call_sign: string;
+  flight_number: string | null;
+  airline_name: string | null;
+  airport_icao: string;
+  direction: "departure" | "arrival";
+  other_name: string | null;
+}
+
+function toFlightHighlight(row: FlightHighlightRow): FlightHighlight {
+  return {
+    callSign: row.call_sign,
+    flightNumber: row.flight_number,
+    airlineName: row.airline_name,
+    airportIcao: row.airport_icao,
+    direction: row.direction,
+    otherName: row.other_name,
+  };
+}
+
+// §17.3 — largest scheduled-vs-revised gap captured this date.
+// `revised_time > scheduled_time` excludes early/on-time flights (a negative
+// or zero gap is not a delay) rather than just sorting on it, so an entirely
+// on-time day correctly yields null instead of its least-early flight.
+async function loadLongestDelay(pool: pg.Pool, date: string): Promise<DelayHighlight | null> {
+  const { rows } = await pool.query<FlightHighlightRow & { delay_minutes: number }>(
+    `SELECT call_sign, flight_number, airline_name, airport_icao, direction, other_name,
+            EXTRACT(EPOCH FROM (revised_time - scheduled_time)) / 60 AS delay_minutes
+     FROM fids_daily_rollup
+     WHERE date = $1 AND scheduled_time IS NOT NULL AND revised_time IS NOT NULL
+       AND revised_time > scheduled_time
+     ORDER BY delay_minutes DESC
+     LIMIT 1`,
+    [date],
+  );
+  const row = rows[0];
+  return row ? { ...toFlightHighlight(row), delayMinutes: Math.round(Number(row.delay_minutes)) } : null;
+}
+
+// §17.3 — first captured flight this date whose status mentions a diversion.
+// AeroDataBox's status vocabulary isn't formally documented, so this matches
+// loosely on substring rather than an exact enum of expected values.
+async function loadNotableDiversion(pool: pg.Pool, date: string): Promise<FlightHighlight | null> {
+  const { rows } = await pool.query<FlightHighlightRow>(
+    `SELECT call_sign, flight_number, airline_name, airport_icao, direction, other_name
+     FROM fids_daily_rollup
+     WHERE date = $1 AND status ILIKE '%divert%'
+     ORDER BY call_sign
+     LIMIT 1`,
+    [date],
+  );
+  const row = rows[0];
+  return row ? toFlightHighlight(row) : null;
+}
+
 export async function loadStats(pool: pg.Pool, date: string): Promise<DigestStats> {
   const { rows } = await pool.query<{ scope: string; flights: number }>(
     `SELECT scope, flights FROM traffic_daily_counts WHERE date = $1`,
@@ -75,11 +147,25 @@ export async function loadStats(pool: pg.Pool, date: string): Promise<DigestStat
     byAirport[airport.icao] = byScope.get(airport.icao) ?? 0;
   }
 
-  const [vsLastWeek, busiestHour, notableAircraft] = await Promise.all([
-    loadVsLastWeek(pool, date),
-    loadBusiestHour(pool, date),
-    loadNotableAircraft(pool, date),
-  ]);
+  const [vsLastWeek, busiestHour, notableAircraft, busiestAirline, longestDelay, notableDiversion] =
+    await Promise.all([
+      loadVsLastWeek(pool, date),
+      loadBusiestHour(pool, date),
+      loadNotableAircraft(pool, date),
+      loadBusiestAirline(pool, date),
+      loadLongestDelay(pool, date),
+      loadNotableDiversion(pool, date),
+    ]);
 
-  return { date, totalFlights: region, byAirport, vsLastWeek, busiestHour, notableAircraft };
+  return {
+    date,
+    totalFlights: region,
+    byAirport,
+    vsLastWeek,
+    busiestHour,
+    notableAircraft,
+    busiestAirline,
+    longestDelay,
+    notableDiversion,
+  };
 }

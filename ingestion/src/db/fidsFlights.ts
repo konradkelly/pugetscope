@@ -40,6 +40,29 @@ export async function replaceBoard(airportIcao: string, flights: FidsFlight[]): 
           f.scheduledTime, f.revisedTime,
         ],
       );
+      // §17.3 — same-transaction capture into the permanent rollup (see
+      // fids_daily_rollup's comment in db/init/001_schema.sql). Skipped when
+      // scheduledTime is null: without it there's no LA calendar date to
+      // bucket the row under.
+      if (f.scheduledTime) {
+        await client.query(
+          `INSERT INTO fids_daily_rollup
+             (date, airport_icao, direction, call_sign, flight_number,
+              airline_name, status, other_name, scheduled_time, revised_time)
+           VALUES (($1::timestamptz AT TIME ZONE 'America/Los_Angeles')::date,
+                    $2,$3,$4,$5,$6,$7,$8,$1,$9)
+           ON CONFLICT (date, airport_icao, direction, call_sign) DO UPDATE SET
+             flight_number = EXCLUDED.flight_number,
+             airline_name = EXCLUDED.airline_name,
+             status = EXCLUDED.status,
+             other_name = EXCLUDED.other_name,
+             revised_time = EXCLUDED.revised_time`,
+          [
+            f.scheduledTime, airportIcao, f.direction, f.callSign, f.flightNumber,
+            f.airlineName, f.status, f.other.name, f.revisedTime,
+          ],
+        );
+      }
     }
     await client.query(
       `INSERT INTO fids_refresh_state (airport_icao, last_fetched_at)

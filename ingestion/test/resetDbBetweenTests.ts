@@ -11,6 +11,7 @@ const TABLES = [
   "push_subscriptions",
   "fids_flights",
   "fids_refresh_state",
+  "fids_daily_rollup",
   "overflight_hourly_counts",
   "traffic_hourly_counts",
   "traffic_daily_counts",
