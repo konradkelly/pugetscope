@@ -57,10 +57,10 @@ flowchart TD
         FE["frontend<br/>React + MapLibre GL"]
         PROM["Prometheus + Grafana"]
         CRON["digest CronJob"]
+        REDIS[("Redis<br/>latest positions")]
     end
 
-    REDIS[("Redis<br/>latest positions")]
-    PG[("PostgreSQL + PostGIS<br/>history · users · rollups")]
+    PG[("RDS PostgreSQL + PostGIS<br/>history · users · rollups")]
 
     OS -->|"poll 30s · 1 credit"| ING
     ING --> REDIS
@@ -138,15 +138,16 @@ framework-opinionated and leaves less to explain.
 
 ## Infrastructure
 
-Everything below is Terraform-managed and deployed by GitHub Actions.
+AWS resources are Terraform-managed; the cluster layer (kubeadm, Flannel, ingress-nginx,
+cert-manager) is bootstrapped separately and applications are deployed by GitHub Actions.
 
 | | |
 |---|---|
 | **Orchestration** | Self-managed Kubernetes (kubeadm, v1.31) on EC2 — deliberately **not** EKS |
 | **Manifests** | Kustomize, `base/` + `overlays/{local,ec2}` |
-| **IaC** | Terraform, 9 modules, S3 remote state with native `use_lockfile` locking (no DynamoDB table) |
+| **IaC** | Terraform, 8 modules, S3 remote state with native `use_lockfile` locking (no DynamoDB table) |
 | **CI/CD** | GitHub Actions → ECR → cluster, authenticating to AWS via **OIDC with no static keys** |
-| **Data** | RDS PostgreSQL + PostGIS, ElastiCache Redis, both in private subnets |
+| **Data** | RDS PostgreSQL + PostGIS in a private subnet; Redis in-cluster as a Deployment |
 | **Secrets** | AWS Secrets Manager; node access via SSM Session Manager, no SSH keys |
 | **TLS** | cert-manager + Let's Encrypt (ACME HTTP-01), ingress-nginx |
 | **Observability** | Prometheus + Grafana in-cluster; `prom-client` metrics from all three backend services |
@@ -162,8 +163,17 @@ tutorial. See §9 of the spec.
 
 **Why no NAT gateway.** At ~$32/month it would have been the single largest line item.
 Nodes sit in public subnets with security groups restricting inbound traffic to the
-ingress path; the data stores are private and reachable only from the node security
+ingress path; RDS stays in a private subnet, reachable only from the node security
 group.
+
+**Why Redis runs in-cluster but Postgres doesn't.** Redis started on ElastiCache and was
+moved onto the existing worker node, dropping ~$11.60/month. It only ever held ~7MB of
+latest-position and pub/sub data with no persistence requirement — it rebuilds within a
+single 30s ingestion poll — so the managed service was buying isolation this workload
+doesn't need. The migration was verified live (117 keys under real traffic, zero
+consumer connection errors) before ElastiCache was decommissioned via `terraform apply`.
+Postgres stays on RDS for the opposite reason: it holds real, non-rebuildable history,
+so the backup, PITR, and failover story is worth paying for. See §9/§10 of the spec.
 
 ---
 
@@ -176,8 +186,8 @@ api/          Fastify REST API — aircraft, airports, analytics, alerts,
 ingestion/    OpenSky polling, bbox filtering, dedupe, reference-data enrichment
 websocket/    Redis-subscribed live position broadcast + web push
 k8s/          Kustomize manifests — base/ + overlays/{local,ec2}
-terraform/    9 modules: vpc, ec2, rds, elasticache, ecr, iam,
-              github-oidc, route53, ses
+terraform/    8 modules: vpc, security_groups, ec2, rds, ecr, iam,
+              route53, ses
 docs/         SPEC.md (source of truth) + design notes
 ```
 

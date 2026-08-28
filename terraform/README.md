@@ -1,9 +1,11 @@
 # PugetScope — Terraform (Phase 1 + domain)
 
 Provisions the AWS infra described in [`docs/SPEC.md`](../docs/SPEC.md) §9 Phase 1:
-VPC, EC2 instances for K8s nodes, RDS (Postgres/PostGIS), ElastiCache
-(Redis), ECR, IAM, plus (added after Phase 2's cluster bootstrap) a stable
-Elastic IP and a Route 53 hosted zone for pugetscope.com. Kubernetes itself
+VPC, security groups, EC2 instances for K8s nodes, RDS (Postgres/PostGIS),
+ECR, IAM, SES, plus (added after Phase 2's cluster bootstrap) a stable
+Elastic IP and a Route 53 hosted zone for pugetscope.com. ElastiCache was
+provisioned here originally and has since been decommissioned — Redis now
+runs in-cluster (see §9/§10 of the spec). Kubernetes itself
 (kubeadm, Flannel, ingress-nginx, cert-manager) is not Terraform-managed —
 see `k8s/README.md`'s "EC2 cluster" section for that layer.
 
@@ -123,16 +125,16 @@ terraform apply
 | EC2 control-plane | 1× t3.medium | ~$30 |
 | EC2 worker | 1× t3.small | ~$15 |
 | RDS Postgres | db.t4g.micro, 20GB gp3, single-AZ | ~$15 |
-| ElastiCache Redis | cache.t4g.micro, single node | ~$12 |
+| Redis | in-cluster Deployment on the worker node | $0 |
 | Elastic IP | attached to a running instance | $0 |
 | Route 53 hosted zone | + negligible query volume | ~$0.50 |
 | ECR / S3 / Secrets Manager | — | ~$1–2 |
-| **Total** | | **~$70–75/mo** |
+| **Total** | | **~$60–63/mo** |
 
 No NAT gateway, no Multi-AZ, no load balancer — all removable line items were
 removed. Biggest lever if the bill needs to shrink: stop the EC2 instances
-(`aws ec2 stop-instances`) between working sessions — RDS/ElastiCache accrue
-cost while running regardless of traffic, EC2 doesn't while stopped. One
+(`aws ec2 stop-instances`) between working sessions — RDS accrues cost while
+running regardless of traffic, EC2 doesn't while stopped. One
 nuance the Elastic IP adds: AWS only waives its ~$0.005/hr charge while the
 IP is attached to a **running** instance — stopping the control-plane node
 to save cost starts a small EIP charge (~$3.6/mo if left stopped a full
