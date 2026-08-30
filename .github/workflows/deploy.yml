@@ -38,7 +38,11 @@ jobs:
   deploy:
     needs: ci
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30, up from 20, since push-ecr.sh went multi-arch: each service's runtime
+    # stage now installs its production deps a second time under arm64
+    # emulation. The build stages stay native ($BUILDPLATFORM), so this is the
+    # cost of `npm ci --omit=dev` x3, not of emulating tsc and Vite.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -58,6 +62,16 @@ jobs:
         with:
           terraform_version: "1.14.5"
           terraform_wrapper: false
+
+      # k8s/push-ecr.sh builds linux/amd64 + linux/arm64 manifest lists, since
+      # the cluster is mixed-arch (x86 control plane, Graviton worker). QEMU
+      # registers the binfmt handlers that let the arm64 runtime stages run on
+      # this x86 runner; the Dockerfiles keep their build stages on
+      # $BUILDPLATFORM so only dependency installs are emulated, not tsc/Vite.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
 
       - name: Resolve control-plane instance ID
         working-directory: terraform

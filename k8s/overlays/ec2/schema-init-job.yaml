@@ -14,7 +14,14 @@ spec:
       restartPolicy: Never
       containers:
         - name: schema-init
-          image: postgis/postgis:16-3.4
+          # postgres, not postgis/postgis: this Job only needs a psql client to
+          # talk to RDS, which is where PostGIS actually runs — the extension is
+          # never loaded in this container. That distinction started to matter
+          # with the Graviton migration (SPEC.md §9), because postgis/postgis
+          # publishes an amd64-only manifest with no arm64 variant, so this Job
+          # would fail to pull the moment it was scheduled onto the arm64
+          # worker. The official postgres image is multi-arch.
+          image: postgres:16-alpine
           command: ["sh", "-c", "psql \"$(DATABASE_URL)\" -v ON_ERROR_STOP=1 -f /schema/001_schema.sql"]
           env:
             - name: POSTGRES_USER

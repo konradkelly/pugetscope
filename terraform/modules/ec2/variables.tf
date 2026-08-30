@@ -25,20 +25,33 @@ variable "control_plane_count" {
   default = 1
 }
 
-variable "worker_count" {
-  type    = number
-  default = 1
-}
-
 variable "control_plane_instance_type" {
   description = "kubeadm requires >= 2 vCPU / 2GB RAM for control-plane nodes."
   type        = string
   default     = "t3.medium"
 }
 
-variable "worker_instance_type" {
-  type    = string
-  default = "t3.small"
+variable "worker_nodes" {
+  description = <<-EOT
+    Worker nodes keyed by node name — the name becomes the instance's hostname
+    and its address in Terraform state, so entries can be added and removed
+    individually. Architecture is inferred from instance_type (a Graviton
+    family such as t4g.small selects the arm64 AMI), so moving a worker between
+    architectures is a one-line change here plus a `-replace` or an
+    add-drain-remove cycle; see k8s/README.md "Migrating a worker to Graviton".
+
+    subnet_index picks the AZ from var.public_subnet_ids. It defaults to 1
+    because the control plane takes index 0, so the default single worker lands
+    in the other AZ. Never change it for a node that already exists — subnet_id
+    is ForceNew, so an edit here replaces a running node.
+  EOT
+  type = map(object({
+    instance_type = string
+    subnet_index  = optional(number, 1)
+  }))
+  default = {
+    "worker-1" = { instance_type = "t3.small" }
+  }
 }
 
 variable "root_volume_size_gb" {

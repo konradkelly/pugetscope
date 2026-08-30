@@ -124,6 +124,89 @@ kubectl apply -f k8s/overlays/ec2/cluster-issuer.yaml
 
 **Fixed: OpenSky Network blocks AWS IP ranges — routed around via a forward proxy.** Originally discovered live on both nodes and from inside pods: `auth.opensky-network.org` and `opensky-network.org` both hit a connection timeout, while unrelated HTTPS traffic (e.g. `example.com`) succeeded instantly — from the *node* itself, not just the pod network, ruling out a Flannel/security-group issue on our end. Consistent with OpenSky blocking cloud-provider/datacenter IP ranges as an anti-scraping measure (a commonly reported behavior for that service). Of the options considered at the time (an OpenSky allowlist exception, a non-cloud egress proxy, or accepting the gap and relying on local dev for live-traffic testing), the middle one was built: `ingestion`'s OpenSky client (`openskyClient.ts`) routes both the states-poll and the aircraft-database CSV download through an optional non-AWS forward proxy (`OPENSKY_PROXY_URL`, `http://user:pass@host:port`, via `undici`'s `ProxyAgent`) when set, direct connection otherwise — so local dev (where the block doesn't apply) is unaffected. Wired through the same secret/config path as every other credential here: `OPENSKY_PROXY_URL` in `k8s/secrets.env` → `create-secrets-ec2.sh` → the `opensky-credentials` Secret → `k8s/base/ingestion-deployment.yaml` (`optional: true`, so an unset value degrades to direct-connection rather than failing the pod), and available as a `deploy.yml` GitHub secret for the CI-driven deploy path. Live aircraft data now flows through this deployment.
 
+## Migrating a worker to Graviton
+
+The cluster is deliberately mixed-architecture: workers run arm64 (`t4g.small`,
+~19% cheaper per hour than `t3.small`), the control plane stays x86_64 until the
+Phase 3 HA rebuild. Architecture follows from `instance_type` in
+`terraform/variables.tf`'s `worker_nodes` map — there's no separate arch flag.
+
+**You cannot resize across architectures.** `t3.small` → `t4g.small` is not a
+stop/modify/start: the root volume holds an x86 AMI, so the instance has to be
+replaced. This runbook adds the new node first and drains onto it, rather than
+replacing in place, so there's no window where the app has nowhere to run.
+
+Before starting, two preconditions:
+
+1. **Images must be multi-arch already.** `push-ecr.sh` builds
+   `linux/amd64,linux/arm64` manifest lists. Run a deploy and confirm before
+   adding an arm64 node — a single-arch image doesn't fail at deploy time, it
+   fails when the scheduler first lands a pod on the new node:
+   ```
+   aws ecr batch-get-image --region us-west-2 --repository-name pugetscope/api \
+     --image-ids imageTag=ec2-latest --query 'images[].imageManifest' --output text | \
+     python -c "import json,sys; print([m['platform'] for m in json.load(sys.stdin)['manifests']])"
+   ```
+2. **Check how `umami-postgres-data` is bound.** That PVC (`base/umami-postgres.yaml`)
+   requests storage with no `storageClassName`, and this cluster has no CSI
+   driver or dynamic provisioner — so whatever satisfies it was created by hand.
+   If it's a hostPath/local PV pinned to `pugetscope-worker-1`, draining that
+   node strands the claim and loses Umami's analytics history:
+   ```
+   kubectl get pvc umami-postgres-data -n pugetscope -o wide
+   kubectl get pv "$(kubectl get pvc umami-postgres-data -n pugetscope -o jsonpath='{.spec.volumeName}')" -o yaml
+   ```
+   If it is node-local, `pg_dump` the Umami DB before draining and restore after.
+
+Then:
+
+```
+# 1. Add the arm64 node (worker-1 keeps running; ~$0.02/hr for the overlap)
+#    terraform/variables.tf:
+#      worker_nodes = {
+#        "worker-1" = { instance_type = "t3.small"  }
+#        "worker-2" = { instance_type = "t4g.small" }
+#      }
+terraform -chdir=terraform apply
+
+# 2. Join it. Token from the control plane, join command run on the new node,
+#    both over SSM — these instances have no SSH key by design.
+aws ssm start-session --target <control-plane-id> --region us-west-2
+  sudo kubeadm token create --print-join-command
+
+aws ssm start-session --target <worker-2-id> --region us-west-2
+  sudo kubeadm join ...          # paste the command from above
+
+# 3. Verify it came up as arm64 before trusting anything to it
+kubectl get nodes -o wide
+kubectl get node pugetscope-worker-2 -o jsonpath='{.status.nodeInfo.architecture}'   # -> arm64
+
+# 4. Move the workload
+kubectl cordon pugetscope-worker-1
+kubectl drain pugetscope-worker-1 --ignore-daemonsets --delete-emptydir-data
+
+# 5. Confirm the app is actually healthy on arm64 — not just Running
+kubectl get pods -n pugetscope -o wide
+curl -sf https://pugetscope.com/api/healthz     # -> {"ok":true}
+
+# 6. Only then remove the old node, and drop it from worker_nodes
+kubectl delete node pugetscope-worker-1
+terraform -chdir=terraform apply
+```
+
+`--delete-emptydir-data` in step 4 is required and lossy-by-design: Prometheus's
+TSDB and Grafana's sqlite are both `emptyDir` (see Observability below), so
+scrape history doesn't survive the drain. That's the same tradeoff already made
+for pod restarts, not a new one.
+
+The Elastic IP stays on the control-plane node throughout, and ingress-nginx is
+a NodePort Service, so kube-proxy keeps routing public traffic to wherever the
+pods actually are — DNS never changes and no cert is reissued.
+
+**Rolling back** at any point before step 6 is `kubectl uncordon
+pugetscope-worker-1` plus removing `worker-2` from the map. After step 6 the x86
+node is gone and rollback means provisioning a new one.
+
 ## Observability
 
 Prometheus + Grafana (`k8s/base/prometheus-deployment.yaml`, `grafana-deployment.yaml`), scraping the `/metrics` endpoints already built into `api`, `websocket`, and `ingestion` (`*/src/metrics.ts`) — HTTP request rate/latency, live websocket connection count, OpenSky poll outcomes/duration, aircraft-in-region, and traffic/overflight rollup refresh duration (the query load `docs/rollup-tables.md` and the ROLLUP_REFRESH_INTERVAL_MS decoupling exist because of). A starter dashboard ("PugetScope Services") covering all of these is provisioned as code via a mounted ConfigMap, not clicked together in the UI.

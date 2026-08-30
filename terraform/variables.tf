@@ -51,11 +51,6 @@ variable "control_plane_count" {
   default = 1
 }
 
-variable "worker_count" {
-  type    = number
-  default = 1
-}
-
 variable "control_plane_instance_type" {
   # Resized from t3.medium 2026-08-15: 14-day CloudWatch CPU averaged ~8%,
   # peaked ~30% — t3.small still clears the ec2 module's documented kubeadm
@@ -66,9 +61,26 @@ variable "control_plane_instance_type" {
   default = "t3.small"
 }
 
-variable "worker_instance_type" {
-  type    = string
-  default = "t3.small"
+variable "worker_nodes" {
+  description = <<-EOT
+    Worker nodes keyed by name; architecture follows from instance_type (see
+    the ec2 module). Graviton migration (SPEC.md §9) runs in three applies:
+
+      1. add  "worker-2" = { instance_type = "t4g.small" }   -> arm64 node joins
+      2. kubectl cordon/drain worker-1, verify the app on arm64
+      3. drop "worker-1"                                     -> x86 node is gone
+
+    Step 1 briefly runs two workers (~$0.02/hr extra). The control plane stays
+    x86_64 (t3.small) until the Phase 3 HA rebuild — replacing a single
+    control-plane node is a downtime event, not a cost tweak.
+  EOT
+  type = map(object({
+    instance_type = string
+    subnet_index  = optional(number, 1)
+  }))
+  default = {
+    "worker-1" = { instance_type = "t3.small" }
+  }
 }
 
 variable "ssh_key_name" {

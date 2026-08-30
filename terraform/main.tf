@@ -63,9 +63,8 @@ module "ec2" {
   iam_instance_profile_name   = module.iam.ec2_instance_profile_name
   ssh_key_name                = var.ssh_key_name
   control_plane_count         = var.control_plane_count
-  worker_count                = var.worker_count
   control_plane_instance_type = var.control_plane_instance_type
-  worker_instance_type        = var.worker_instance_type
+  worker_nodes                = var.worker_nodes
   k8s_minor_version           = var.k8s_minor_version
 }
 

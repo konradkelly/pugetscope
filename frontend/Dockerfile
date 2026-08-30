@@ -1,4 +1,9 @@
-FROM node:20-alpine AS build
+# Built on the builder's own architecture — Vite emits static assets, which are
+# the same bytes whichever machine produced them. This matters more here than
+# in the backend images: without it, the arm64 half of the multi-arch build
+# (k8s/push-ecr.sh) would run npm ci plus a full Vite production build under
+# QEMU emulation. Only the nginx runtime stage below is genuinely per-target.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

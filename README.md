@@ -175,6 +175,20 @@ consumer connection errors) before ElastiCache was decommissioned via `terraform
 Postgres stays on RDS for the opposite reason: it holds real, non-rebuildable history,
 so the backup, PITR, and failover story is worth paying for. See §9/§10 of the spec.
 
+**Why the workers are Graviton but the control plane isn't.** `t4g.small` costs 19%
+less per hour than the `t3.small` it replaced, for the same 2 vCPU / 2 GB. The cost
+of that is arm64: every image has to be a multi-arch manifest list, because nothing
+pins these Deployments to a particular node and a single-arch image fails only once
+the scheduler lands a pod on the wrong architecture. `push-ecr.sh` builds
+`linux/amd64,linux/arm64`, with each Dockerfile's build stage pinned to
+`$BUILDPLATFORM` — the TypeScript and Vite output is architecture-independent, so
+only the dependency-install stage is worth emulating. The one image that had no
+arm64 build was `postgis/postgis`, used by the schema-init Job purely for a `psql`
+binary; PostGIS itself runs on RDS, so the official multi-arch `postgres` image
+does the same job. The control plane stays x86_64 because there is exactly one of
+it and it holds etcd — replacing it is a downtime event that belongs to the Phase 3
+HA milestone, not to a cost change. See `k8s/README.md` for the migration runbook.
+
 ---
 
 ## Repository layout
