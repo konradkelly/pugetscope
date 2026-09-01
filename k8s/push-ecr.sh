@@ -35,9 +35,16 @@ aws ecr get-login-password --region "$REGION" | docker login --username AWS --pa
 # Cross-building the per-target runtime stages also needs binfmt/QEMU handlers
 # registered — Docker Desktop ships them, CI installs them via
 # docker/setup-qemu-action (.github/workflows/deploy.yml).
+#
+# --driver-opt network=host: the docker-container driver otherwise runs
+# BuildKit on its own bridge network, whose MTU doesn't match GitHub Actions
+# runners' host network — large registry.npmjs.org packets get dropped
+# instead of fragmented, and every `npm ci` fails with a generic "npm error
+# network ... behind a proxy" (no proxy involved). Sharing the host network
+# namespace avoids the mismatch.
 log "Ensuring buildx builder ($BUILDER)"
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
-  docker buildx create --name "$BUILDER" --driver docker-container --bootstrap
+  docker buildx create --name "$BUILDER" --driver docker-container --driver-opt network=host --bootstrap
 fi
 docker buildx use "$BUILDER"
 
