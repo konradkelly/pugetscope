@@ -18,8 +18,15 @@ async function generateContent(stats: DigestStats): Promise<DigestContent> {
   // schema, so there's no prose-leak parsing to guard against.
   const response = await client.messages.create({
     model: "claude-sonnet-5",
-    max_tokens: 1024,
+    // 1024 was enough back when thinking was opt-in; Sonnet 5 thinks by
+    // default now, and a busy day's stats could burn the whole budget on
+    // thinking tokens before ever reaching the JSON text block (the
+    // "no text block in digest response" failure). effort: "low" keeps
+    // thinking short for this simple summarization task — plenty of
+    // headroom left, not just a bigger cap papering over the real cost.
+    max_tokens: 4096,
     output_config: {
+      effort: "low",
       format: {
         type: "json_schema",
         schema: {
