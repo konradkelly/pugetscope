@@ -84,7 +84,7 @@ export const BASE_STYLES: BaseStyleOption[] = [
   },
 ];
 
-export const DEFAULT_BASE_STYLE_ID: BaseStyleId = "bright";
+export const DEFAULT_BASE_STYLE_ID: BaseStyleId = "satellite";
 
 export function findBaseStyle(id: BaseStyleId): BaseStyleOption {
   return BASE_STYLES.find((s) => s.id === id) ?? BASE_STYLES[0];
