@@ -17,4 +17,10 @@ export const config = {
     privateKey: process.env.VAPID_PRIVATE_KEY ?? "",
     subject: process.env.VAPID_SUBJECT ?? "mailto:admin@pugetscope.com",
   },
+  // Email alerts — same optional/log-instead-of-crash posture as vapid
+  // above, mirroring api/src/config.ts's email block.
+  email: {
+    fromAddress: process.env.SES_FROM_EMAIL ?? null,
+    region: process.env.AWS_REGION ?? "us-west-2",
+  },
 };

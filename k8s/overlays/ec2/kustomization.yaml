@@ -130,6 +130,8 @@ patches:
                 env:
                   - name: CORS_ORIGIN
                     value: https://pugetscope.com
+                  - name: SES_FROM_EMAIL
+                    value: noreply@pugetscope.com
   - target:
       kind: Deployment
       name: ingestion
@@ -174,6 +176,13 @@ patches:
               spec:
                 imagePullSecrets:
                   - name: ecr-registry
+                containers:
+                  - name: digest-generate
+                    env:
+                      - name: SES_FROM_EMAIL
+                        value: noreply@pugetscope.com
+                      - name: FRONTEND_URL
+                        value: https://pugetscope.com
   - target:
       kind: CronJob
       name: aircraft-enrich

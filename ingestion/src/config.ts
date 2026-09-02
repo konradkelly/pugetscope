@@ -78,4 +78,13 @@ export const config = {
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY ?? null,
   },
+  // Digest-subscriber emails (generateDigest.ts -> email/sendDigestEmails.ts)
+  // — same optional/log-instead-of-crash posture as api/src/config.ts's
+  // email block, and frontendUrl is only ever needed to build the digest/
+  // unsubscribe links in that same email.
+  email: {
+    fromAddress: process.env.SES_FROM_EMAIL ?? null,
+    region: process.env.AWS_REGION ?? "us-west-2",
+  },
+  frontendUrl: process.env.FRONTEND_URL ?? "https://pugetscope.com",
 };

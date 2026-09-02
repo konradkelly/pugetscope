@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { pool } from "./db/postgres.js";
 import { buildPrompt, yesterdayLA, type DigestContent, type DigestStats } from "./digest/format.js";
 import { loadStats } from "./digest/loadStats.js";
+import { sendDigestEmails } from "./email/sendDigestEmails.js";
 
 // One-off nightly script (see package.json's generate-digest) — same
 // convention as enrich.ts/loadZips.ts/backfillTrafficRollup.ts. Stat loading
@@ -78,6 +79,8 @@ async function main(): Promise<void> {
   const content = await generateContent(stats);
   await upsertDigest(stats, content);
   console.log(`[generate-digest] wrote digest for ${date}: "${content.headline}"`);
+
+  await sendDigestEmails(pool, date, content.headline, content.body);
 }
 
 main()

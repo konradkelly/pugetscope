@@ -29,6 +29,7 @@ interface CreateWatchBody {
   radiusM?: number;
   maxAltitudeM?: number;
   matchValue?: string;
+  notifyEmail?: boolean;
 }
 
 interface WatchRow {
@@ -40,6 +41,7 @@ interface WatchRow {
   radius_m: number | null;
   max_altitude_m: number | null;
   match_value: string | null;
+  notify_email: boolean;
   created_at: string;
 }
 
@@ -122,6 +124,11 @@ export async function alertsRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const label = body.label?.slice(0, 100) ?? null;
+      // Email opt-in requires an account — an anonymous device watch has no
+      // email address to send to (see notify_email's column comment in
+      // db/init/001_schema.sql) — so silently ignore the flag rather than
+      // erroring when logged out.
+      const notifyEmail = Boolean(userId) && body.notifyEmail === true;
 
       if (body.kind === "geofence") {
         const { lat, lon, radiusM, maxAltitudeM } = body;
@@ -136,10 +143,10 @@ export async function alertsRoutes(app: FastifyInstance): Promise<void> {
         }
 
         const inserted = await pool.query<{ id: number }>(
-          `INSERT INTO alert_watches (device_id, user_id, kind, label, location, radius_m, max_altitude_m)
-           VALUES ($1, $2, 'geofence', $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7)
+          `INSERT INTO alert_watches (device_id, user_id, kind, label, location, radius_m, max_altitude_m, notify_email)
+           VALUES ($1, $2, 'geofence', $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8)
            RETURNING id::int`,
-          [body.deviceId, userId, label, lon, lat, Math.round(radiusM), maxAltitudeM ?? null],
+          [body.deviceId, userId, label, lon, lat, Math.round(radiusM), maxAltitudeM ?? null, notifyEmail],
         );
         return reply.code(201).send({ id: inserted.rows[0].id });
       }
@@ -151,10 +158,10 @@ export async function alertsRoutes(app: FastifyInstance): Promise<void> {
         }
 
         const inserted = await pool.query<{ id: number }>(
-          `INSERT INTO alert_watches (device_id, user_id, kind, label, match_value)
-           VALUES ($1, $2, 'callsign', $3, $4)
+          `INSERT INTO alert_watches (device_id, user_id, kind, label, match_value, notify_email)
+           VALUES ($1, $2, 'callsign', $3, $4, $5)
            RETURNING id::int`,
-          [body.deviceId, userId, label, matchValue],
+          [body.deviceId, userId, label, matchValue, notifyEmail],
         );
         return reply.code(201).send({ id: inserted.rows[0].id });
       }
@@ -182,7 +189,7 @@ export async function alertsRoutes(app: FastifyInstance): Promise<void> {
     const result = await pool.query<WatchRow>(
       `SELECT id::int, kind, label,
               ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon,
-              radius_m, max_altitude_m, match_value, created_at
+              radius_m, max_altitude_m, match_value, notify_email, created_at
        FROM alert_watches
        WHERE (($1::uuid IS NOT NULL AND user_id = $1::uuid) OR device_id = $2::uuid)
        ORDER BY created_at DESC`,
@@ -199,6 +206,7 @@ export async function alertsRoutes(app: FastifyInstance): Promise<void> {
         radiusM: r.radius_m,
         maxAltitudeM: r.max_altitude_m,
         matchValue: r.match_value,
+        notifyEmail: r.notify_email,
         createdAt: r.created_at,
       })),
     });

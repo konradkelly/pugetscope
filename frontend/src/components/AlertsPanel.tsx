@@ -27,11 +27,13 @@ export function AlertsPanel({ user, onClose, pinDropArmed, onArmPinDrop, dropped
   const [error, setError] = useState<string | null>(null);
 
   const [callsignInput, setCallsignInput] = useState("");
+  const [callsignEmail, setCallsignEmail] = useState(false);
   const [callsignPending, setCallsignPending] = useState(false);
 
   const [radiusM, setRadiusM] = useState(RADIUS_OPTIONS_M[1]);
   const [maxAltitudeM, setMaxAltitudeM] = useState("");
   const [pinLabel, setPinLabel] = useState("");
+  const [pinEmail, setPinEmail] = useState(false);
   const [pinPending, setPinPending] = useState(false);
 
   function loadWatches() {
@@ -55,8 +57,14 @@ export function AlertsPanel({ user, onClose, pinDropArmed, onArmPinDrop, dropped
     setError(null);
     try {
       const deviceId = await ensurePushSubscription();
-      await api.createWatch(deviceId, { kind: "callsign", matchValue, label: matchValue });
+      await api.createWatch(deviceId, {
+        kind: "callsign",
+        matchValue,
+        label: matchValue,
+        notifyEmail: callsignEmail,
+      });
       setCallsignInput("");
+      setCallsignEmail(false);
       loadWatches();
     } catch (err) {
       setError(err instanceof Error ? err.message : "something went wrong");
@@ -80,10 +88,12 @@ export function AlertsPanel({ user, onClose, pinDropArmed, onArmPinDrop, dropped
         radiusM,
         maxAltitudeM: maxAltitudeM ? Number(maxAltitudeM) : undefined,
         label: pinLabel.trim() || undefined,
+        notifyEmail: pinEmail,
       });
       onClearDroppedPin();
       setPinLabel("");
       setMaxAltitudeM("");
+      setPinEmail(false);
       loadWatches();
     } catch (err) {
       setError(err instanceof Error ? err.message : "something went wrong");
@@ -126,21 +136,33 @@ export function AlertsPanel({ user, onClose, pinDropArmed, onArmPinDrop, dropped
 
       <div className="mt-3 border-t border-gray-100 pt-3">
         <h3 className="text-sm font-semibold">Watch a callsign or tail number</h3>
-        <form onSubmit={handleCreateCallsignWatch} className="mt-1.5 flex gap-1.5">
-          <input
-            value={callsignInput}
-            onChange={(e) => setCallsignInput(e.target.value)}
-            placeholder="e.g. DAL889 or a1b2c3"
-            maxLength={8}
-            className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm uppercase"
-          />
-          <button
-            type="submit"
-            disabled={callsignPending || !callsignInput.trim()}
-            className="rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
-          >
-            {callsignPending ? "…" : "Add"}
-          </button>
+        <form onSubmit={handleCreateCallsignWatch} className="mt-1.5 space-y-1.5">
+          <div className="flex gap-1.5">
+            <input
+              value={callsignInput}
+              onChange={(e) => setCallsignInput(e.target.value)}
+              placeholder="e.g. DAL889 or a1b2c3"
+              maxLength={8}
+              className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm uppercase"
+            />
+            <button
+              type="submit"
+              disabled={callsignPending || !callsignInput.trim()}
+              className="rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+            >
+              {callsignPending ? "…" : "Add"}
+            </button>
+          </div>
+          {user && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              <input
+                type="checkbox"
+                checked={callsignEmail}
+                onChange={(e) => setCallsignEmail(e.target.checked)}
+              />
+              Also email me
+            </label>
+          )}
         </form>
       </div>
 
@@ -192,6 +214,16 @@ export function AlertsPanel({ user, onClose, pinDropArmed, onArmPinDrop, dropped
                 ))}
               </select>
             </div>
+            {user && (
+              <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={pinEmail}
+                  onChange={(e) => setPinEmail(e.target.checked)}
+                />
+                Also email me
+              </label>
+            )}
             <div className="flex gap-1.5">
               <button
                 type="submit"

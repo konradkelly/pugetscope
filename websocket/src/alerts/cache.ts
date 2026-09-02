@@ -18,6 +18,11 @@ export interface CachedWatch {
   maxAltitudeM: number | null;
   matchValue: string | null;
   lastTriggeredAtMs: number | null;
+  // userId/email are only ever non-null together (opt-in requires an
+  // account — see the notify_email column comment in db/init/001_schema.sql).
+  userId: string | null;
+  notifyEmail: boolean;
+  email: string | null;
   // One entry per device that should be notified for this watch: always the
   // creating device (deviceId, above), plus — for an account-linked watch —
   // every other device the same account has push-enabled. See refresh()'s
@@ -36,6 +41,9 @@ interface WatchRow {
   max_altitude_m: number | null;
   match_value: string | null;
   last_triggered_at: string | null;
+  user_id: string | null;
+  notify_email: boolean;
+  email: string | null;
   sub_device_id: string;
   endpoint: string;
   p256dh: string;
@@ -49,6 +57,7 @@ async function refresh(): Promise<void> {
     `SELECT w.id::int, w.device_id, w.kind, w.label,
             ST_Y(w.location::geometry) AS lat, ST_X(w.location::geometry) AS lon,
             w.radius_m, w.max_altitude_m, w.match_value, w.last_triggered_at,
+            w.user_id, w.notify_email, u.email,
             s.device_id AS sub_device_id, s.endpoint, s.p256dh, s.auth
      FROM alert_watches w
      JOIN push_subscriptions s
@@ -61,7 +70,8 @@ async function refresh(): Promise<void> {
        -- the same browser sequentially, the later login retags that device's
        -- user_id, so the earlier account's other watches quietly stop
        -- fanning out to it here — a shared-device side effect, not a bug.
-       ON s.device_id = w.device_id OR (w.user_id IS NOT NULL AND s.user_id = w.user_id)`,
+       ON s.device_id = w.device_id OR (w.user_id IS NOT NULL AND s.user_id = w.user_id)
+     LEFT JOIN users u ON u.id = w.user_id`,
   );
 
   const watchesById = new Map<number, CachedWatch>();
@@ -79,6 +89,9 @@ async function refresh(): Promise<void> {
         maxAltitudeM: r.max_altitude_m,
         matchValue: r.match_value,
         lastTriggeredAtMs: r.last_triggered_at ? new Date(r.last_triggered_at).getTime() : null,
+        userId: r.user_id,
+        notifyEmail: r.notify_email,
+        email: r.email,
         subscriptions: [],
       };
       watchesById.set(r.id, watch);

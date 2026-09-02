@@ -26,6 +26,9 @@ function geofenceWatch(overrides: Partial<CachedWatch> = {}): CachedWatch {
     maxAltitudeM: null,
     matchValue: null,
     lastTriggeredAtMs: null,
+    userId: null,
+    notifyEmail: false,
+    email: null,
     subscriptions: [],
     ...overrides,
   };
@@ -43,6 +46,9 @@ function callsignWatch(overrides: Partial<CachedWatch> = {}): CachedWatch {
     maxAltitudeM: null,
     matchValue: "TEST123",
     lastTriggeredAtMs: null,
+    userId: null,
+    notifyEmail: false,
+    email: null,
     subscriptions: [],
     ...overrides,
   };

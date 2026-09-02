@@ -52,6 +52,8 @@ spec:
               valueFrom: { secretKeyRef: { name: push-credentials, key: VAPID_PUBLIC_KEY } }
             - name: VAPID_PRIVATE_KEY
               valueFrom: { secretKeyRef: { name: push-credentials, key: VAPID_PRIVATE_KEY } }
+            - name: SES_FROM_EMAIL
+              value: ""
           readinessProbe:
             httpGet: { path: /healthz, port: 3001 }
             initialDelaySeconds: 3

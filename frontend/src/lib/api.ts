@@ -177,12 +177,14 @@ export interface CreateGeofenceWatch {
   lon: number;
   radiusM: number;
   maxAltitudeM?: number;
+  notifyEmail?: boolean;
 }
 
 export interface CreateCallsignWatch {
   kind: "callsign";
   label?: string;
   matchValue: string;
+  notifyEmail?: boolean;
 }
 
 export interface ReplayBounds {
@@ -255,6 +257,7 @@ export interface AlertWatch {
   radiusM: number | null;
   maxAltitudeM: number | null;
   matchValue: string | null;
+  notifyEmail: boolean;
   createdAt: string;
 }
 
@@ -305,6 +308,13 @@ export const api = {
   // Plural /digests/:date, not the crawler-facing HTML /digest/:date route —
   // see api/src/routes/digest.ts for why the two are split.
   getDigest: (date: string) => request<Digest>(`/digests/${date}`),
+
+  getDigestSubscription: () => request<{ subscribed: boolean }>("/digests/subscription"),
+
+  subscribeDigest: () =>
+    request<{ subscribed: boolean }>("/digests/subscribe", { method: "POST" }),
+
+  unsubscribeDigest: () => request<void>("/digests/subscribe", { method: "DELETE" }),
 
   getReplayBounds: () => request<ReplayBounds>("/replay/bounds"),
 

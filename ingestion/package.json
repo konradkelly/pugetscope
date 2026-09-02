@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
+    "@aws-sdk/client-ses": "^3.1101.0",
     "csv-parse": "^7.0.1",
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.1",

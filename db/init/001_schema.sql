@@ -244,6 +244,13 @@ CREATE TABLE IF NOT EXISTS alert_watches (
 -- Additive — same reasoning as push_subscriptions.user_id above.
 ALTER TABLE alert_watches ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 
+-- Opt-in email delivery alongside push, set at watch-creation time (no watch
+-- edit exists, so this is create-only like every other watch field). Only
+-- meaningful when user_id is set — an anonymous device watch has no email
+-- address to send to; enforced in api/src/routes/alerts.ts, not a CHECK
+-- constraint, matching how user_id linkage is handled everywhere else here.
+ALTER TABLE alert_watches ADD COLUMN IF NOT EXISTS notify_email BOOLEAN NOT NULL DEFAULT false;
+
 CREATE INDEX IF NOT EXISTS alert_watches_device_id_idx
   ON alert_watches (device_id);
 
@@ -269,5 +276,30 @@ CREATE TABLE IF NOT EXISTS digests (
   body TEXT NOT NULL,
   meta_description TEXT NOT NULL,
   stats JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per (user, day) an alert email was sent or suppressed —
+-- websocket/src/alerts/notifyEmail.ts's per-user daily cap. sent_count is
+-- incremented atomically via ON CONFLICT ... DO UPDATE ... RETURNING before
+-- each send decision, so the check-and-increment can't race across
+-- concurrently-matching watches; suppressed_count tracks events that hit the
+-- cap and were skipped (still visible in-app, just not emailed).
+CREATE TABLE IF NOT EXISTS user_email_sends (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day DATE NOT NULL,
+  sent_count INTEGER NOT NULL DEFAULT 0,
+  suppressed_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day)
+);
+
+-- Daily-digest email opt-in — separate from alert delivery entirely (one
+-- digest a day, so no cap needed here, just subscribe/unsubscribe). token is
+-- a persistent, non-expiring random value (unlike auth/passwordReset.ts's
+-- Redis-TTL token) so the unsubscribe link in every future digest email
+-- keeps working indefinitely, not just for 30 minutes.
+CREATE TABLE IF NOT EXISTS digest_subscriptions (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  unsubscribe_token TEXT UNIQUE NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -7,6 +7,7 @@ import { getSnapshot, subscriber } from "./db/redis.js";
 import { getWatches, startWatchCache } from "./alerts/cache.js";
 import { matchWatches, type LiveAircraft } from "./alerts/matching.js";
 import { sendAlertNotifications } from "./alerts/notify.js";
+import { sendAlertEmails } from "./alerts/notifyEmail.js";
 import { registry, httpRequestDuration, wsConnections } from "./metrics.js";
 
 // Split from main() so integration tests can `.inject()` against a real,
@@ -66,6 +67,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     const matches = matchWatches(data, getWatches());
     sendAlertNotifications(matches).catch((err) =>
       app.log.error({ err }, "alert notification dispatch failed"),
+    );
+    sendAlertEmails(matches).catch((err) =>
+      app.log.error({ err }, "alert email dispatch failed"),
     );
   });
 

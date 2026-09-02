@@ -1,5 +1,7 @@
+import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { pool } from "../db/postgres.js";
+import { getCurrentUserId } from "../auth/session.js";
 import { escapeHtml, getFrontendShell, spliceCrawlerHtml } from "../lib/crawlerPage.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -60,6 +62,12 @@ function digestBodyHtml(headline: string, body: string): string {
     .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
     .join("");
   return `<article><h1>${escapeHtml(headline)}</h1>${paragraphs}<p><a href="/">View the live tracker &rarr;</a></p></article>`;
+}
+
+function unsubscribeBodyHtml(unsubscribed: boolean): string {
+  return unsubscribed
+    ? `<article><h1>Unsubscribed</h1><p>You won't get any more Daily Digest emails. <a href="/">Back to the live tracker &rarr;</a></p></article>`
+    : `<article><h1>Link no longer valid</h1><p>This unsubscribe link has already been used, or the subscription no longer exists.</p></article>`;
 }
 
 export async function digestRoutes(app: FastifyInstance): Promise<void> {
@@ -145,5 +153,79 @@ export async function digestRoutes(app: FastifyInstance): Promise<void> {
       metaDescription: row.meta_description,
       stats: row.stats,
     });
+  });
+
+  // Public, crawler/browser-facing — reached from the one-click unsubscribe
+  // link in every digest email (ingestion/src/email/sendDigestEmails.ts), so
+  // deliberately no auth: the token itself is the credential, same trust
+  // model as auth/passwordReset.ts's reset link. Unlike that token, this one
+  // is persistent (not Redis/TTL-based) since a subscriber's unsubscribe
+  // link must keep working for as long as the subscription exists, not just
+  // 30 minutes.
+  app.get<{ Querystring: { token?: string } }>("/digest/unsubscribe", async (request, reply) => {
+    const { token } = request.query;
+    let unsubscribed = false;
+    if (token) {
+      const result = await pool.query("DELETE FROM digest_subscriptions WHERE unsubscribe_token = $1", [token]);
+      unsubscribed = (result.rowCount ?? 0) > 0;
+    }
+
+    let shell: string;
+    try {
+      shell = await getFrontendShell();
+    } catch (err) {
+      request.log.error(err, "[digest] frontend shell unavailable");
+      return reply.code(503).send("Digest temporarily unavailable.");
+    }
+
+    const url = `${request.protocol}://${request.headers.host}/digest/unsubscribe`;
+    const html = spliceCrawlerHtml(shell, {
+      title: "Unsubscribe | PugetScope Daily Digest",
+      description: "Manage your PugetScope Daily Digest email subscription.",
+      url,
+      bodyHtml: unsubscribeBodyHtml(unsubscribed),
+    });
+
+    return reply.type("text/html").send(html);
+  });
+
+  // JSON, for DigestPanel — mirrors the /digests/:date split from the
+  // crawler-facing routes above (see that route's comment for why).
+  app.get("/digests/subscription", async (request, reply) => {
+    const userId = await getCurrentUserId(request);
+    if (!userId) return reply.code(401).send({ error: "not authenticated" });
+
+    const result = await pool.query("SELECT 1 FROM digest_subscriptions WHERE user_id = $1", [userId]);
+    return reply.send({ subscribed: (result.rowCount ?? 0) > 0 });
+  });
+
+  app.post(
+    "/digests/subscribe",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const userId = await getCurrentUserId(request);
+      if (!userId) return reply.code(401).send({ error: "not authenticated" });
+
+      const token = randomBytes(32).toString("base64url");
+      // ON CONFLICT DO NOTHING — idempotent re-subscribe, keeps the
+      // existing token (and thus any previously-sent unsubscribe links)
+      // valid rather than silently invalidating them.
+      await pool.query(
+        `INSERT INTO digest_subscriptions (user_id, unsubscribe_token)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO NOTHING`,
+        [userId, token],
+      );
+
+      return reply.send({ subscribed: true });
+    },
+  );
+
+  app.delete("/digests/subscribe", async (request, reply) => {
+    const userId = await getCurrentUserId(request);
+    if (!userId) return reply.code(401).send({ error: "not authenticated" });
+
+    await pool.query("DELETE FROM digest_subscriptions WHERE user_id = $1", [userId]);
+    return reply.code(204).send();
   });
 }

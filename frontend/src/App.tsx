@@ -325,7 +325,7 @@ export default function App() {
             <SpottingLogPanel onClose={() => setActiveRailPanel(null)} />
           )}
           {activeRailPanel === "digest" && (
-            <DigestPanel date={digestDate} onClose={() => toggleRailPanel("digest")} />
+            <DigestPanel user={user} date={digestDate} onClose={() => toggleRailPanel("digest")} />
           )}
           {activeRailPanel === "replay" && (
             <ReplayScrubber

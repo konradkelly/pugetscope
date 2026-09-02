@@ -51,3 +51,5 @@ spec:
                   value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
                 - name: ANTHROPIC_API_KEY
                   valueFrom: { secretKeyRef: { name: anthropic-credentials, key: ANTHROPIC_API_KEY } }
+                - name: SES_FROM_EMAIL
+                  value: ""

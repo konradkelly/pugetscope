@@ -13,6 +13,7 @@
     "test:integration": "cross-env DATABASE_URL=postgres://pugetscope:pugetscope@localhost:5433/pugetscope_test REDIS_URL=redis://localhost:6379/1 POSTGRES_SSL=false vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.1101.0",
     "@fastify/cors": "^10.0.1",
     "@fastify/websocket": "^11.0.2",
     "dotenv": "^16.4.7",
