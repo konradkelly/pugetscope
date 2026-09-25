@@ -17,3 +17,9 @@ resource "aws_security_group" "test_bastion" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+resource "aws_ebs_volume" "test_data" {
+  availability_zone = "us-west-2a"
+  size              = 10
+  encrypted         = false
+}
