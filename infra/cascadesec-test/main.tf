@@ -23,3 +23,8 @@ resource "aws_ebs_volume" "test_data" {
   size              = 10
   encrypted         = false
 }
+
+resource "aws_kms_key" "test_key" {
+  description             = "CascadeSec test key"
+  deletion_window_in_days = 30
+}
